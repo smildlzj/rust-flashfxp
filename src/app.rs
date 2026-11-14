@@ -2,9 +2,9 @@ use std::path::PathBuf;
 use std::sync::mpsc;
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::bus::{remote_join, Direction, Entry, TransferTask, UiCmd, UiEvent};
-use crate::session::ftp::run_backend;
-use crate::store::{Group, Proxy, Site, SiteRepo};
+use flashfxp_lib::bus::{remote_join, Direction, Entry, TransferTask, UiCmd, UiEvent};
+use flashfxp_lib::session::ftp::run_backend;
+use flashfxp_lib::store::{Group, Proxy, Site, SiteRepo};
 
 mod classic;
 mod ui_impl;
@@ -311,7 +311,7 @@ impl App {
                     self.remote_marks.clear();
                 }
                 UiEvent::Notify { level, text } => {
-                    self.push_toast(&text, level == crate::bus::Level::Error);
+                    self.push_toast(&text, level == flashfxp_lib::bus::Level::Error);
                 }
                 UiEvent::TransferStarted { id, size } => {
                     if let Some(q) = self.queue.iter().find(|q| q.id == id) {
@@ -498,7 +498,7 @@ impl App {
         });
         self.show_queue = true;
         self.send(UiCmd::RelayEnqueue {
-            task: crate::bus::RelayTask {
+            task: flashfxp_lib::bus::RelayTask {
                 id,
                 src_site,
                 src_proxy,

@@ -18,7 +18,7 @@ pub enum UiCmd {
     RelayEnqueue { task: RelayTask },
 }
 
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize, Clone)]
 pub enum UiEvent {
     Connected,
     Disconnected,
@@ -30,7 +30,8 @@ pub enum UiEvent {
     TransferFinished { id: u64, ok: bool, error: Option<String> },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 #[allow(dead_code)]
 pub enum Level {
     Info,
@@ -38,7 +39,7 @@ pub enum Level {
     Error,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct Entry {
     pub name: String,
     pub is_dir: bool,
@@ -47,7 +48,7 @@ pub struct Entry {
     pub is_symlink: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub enum Direction {
     Download,
     Upload,

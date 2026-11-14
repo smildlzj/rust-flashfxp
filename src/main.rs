@@ -1,7 +1,6 @@
 mod app;
-mod bus;
-mod session;
-mod store;
+
+use flashfxp_lib::{bus, session};
 
 fn main() -> eframe::Result {
     let options = eframe::NativeOptions {

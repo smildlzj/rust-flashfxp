@@ -78,7 +78,8 @@ pub struct SiteRepo {
     cipher: Cipher,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Site {
     pub id: i64,
     pub group_id: Option<i64>,
@@ -95,7 +96,8 @@ pub struct Site {
     pub tls_accept_invalid: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Proxy {
     pub id: i64,
     pub name: String,
@@ -106,7 +108,7 @@ pub struct Proxy {
     pub password: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 #[allow(dead_code)]
 pub struct Group {
     pub id: i64,

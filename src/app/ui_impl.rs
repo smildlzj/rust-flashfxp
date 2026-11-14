@@ -6,8 +6,8 @@ use super::classic::{self, Icon};
 use super::{
     human_size, App, BottomTab, CompareMark, Dialog, QueueStatus, SortKey, SortState,
 };
-use crate::bus::{remote_parent, Direction, UiCmd};
-use crate::store::{Proxy, Site};
+use flashfxp_lib::bus::{remote_parent, Direction, UiCmd};
+use flashfxp_lib::store::{Proxy, Site};
 
 const DIR_COLOR: egui::Color32 = egui::Color32::from_rgb(0, 100, 160);
 const SYMLINK_COLOR: egui::Color32 = egui::Color32::from_rgb(0, 128, 96);
@@ -443,7 +443,7 @@ impl App {
                         self.refresh_local();
                     } else {
                         let path_str = self.remote_dir.clone().unwrap();
-                        let p = crate::bus::remote_join(&path_str, &self.remote_entries[i].name);
+                        let p = flashfxp_lib::bus::remote_join(&path_str, &self.remote_entries[i].name);
                         self.send(UiCmd::RemoteDelete { paths: vec![p] });
                         self.remote_sel = None;
                         self.refresh_remote();
@@ -500,7 +500,7 @@ impl App {
 
     /// 栏内文件列表 + 栏底状态条
     fn pane_list(&mut self, ui: &mut egui::Ui, local: bool) {
-        let entries: Vec<crate::bus::Entry> = if local {
+        let entries: Vec<flashfxp_lib::bus::Entry> = if local {
             self.local_entries.clone()
         } else {
             self.remote_entries.clone()
@@ -578,7 +578,7 @@ impl App {
                     // 同步浏览：远程侧跟随进入同名目录
                     if self.sync_browse && self.remote_dir.is_some() {
                         if self.remote_entries.iter().any(|r| r.name == e.name && r.is_dir) {
-                            let rp = crate::bus::remote_join(
+                            let rp = flashfxp_lib::bus::remote_join(
                                 self.remote_dir.as_deref().unwrap_or("/"),
                                 &e.name,
                             );
@@ -589,7 +589,7 @@ impl App {
                     }
                 } else {
                     let path_str = self.remote_dir.clone().unwrap();
-                    let p = crate::bus::remote_join(&path_str, &e.name);
+                    let p = flashfxp_lib::bus::remote_join(&path_str, &e.name);
                     self.send(UiCmd::RemoteList { path: p });
                     if self.sync_browse {
                         if self.local_entries.iter().any(|l| l.name == e.name && l.is_dir) {
@@ -619,12 +619,12 @@ impl App {
     fn compare_panes(&mut self) {
         self.local_marks.clear();
         self.remote_marks.clear();
-        let remote_map: std::collections::HashMap<&str, &crate::bus::Entry> = self
+        let remote_map: std::collections::HashMap<&str, &flashfxp_lib::bus::Entry> = self
             .remote_entries
             .iter()
             .map(|e| (e.name.as_str(), e))
             .collect();
-        let local_map: std::collections::HashMap<&str, &crate::bus::Entry> = self
+        let local_map: std::collections::HashMap<&str, &flashfxp_lib::bus::Entry> = self
             .local_entries
             .iter()
             .map(|e| (e.name.as_str(), e))
@@ -674,7 +674,7 @@ impl App {
     fn entry_list(
         ui: &mut egui::Ui,
         list_id: &str,
-        entries: &[crate::bus::Entry],
+        entries: &[flashfxp_lib::bus::Entry],
         selected: Option<usize>,
         marks: Option<&std::collections::HashMap<String, CompareMark>>,
         height: f32,
@@ -1595,7 +1595,7 @@ impl App {
             }
             Some(Dialog::MkdirRemote) => {
                 if let Some(d) = &self.remote_dir {
-                    let p = crate::bus::remote_join(d, &name);
+                    let p = flashfxp_lib::bus::remote_join(d, &name);
                     self.send(UiCmd::RemoteMkdir { path: p });
                     self.refresh_remote();
                 }
@@ -1610,8 +1610,8 @@ impl App {
             }
             Some(Dialog::RenameRemote(i)) => {
                 if let (Some(d), Some(e)) = (&self.remote_dir, self.remote_entries.get(i)) {
-                    let from = crate::bus::remote_join(d, &e.name);
-                    let to = crate::bus::remote_join(d, &name);
+                    let from = flashfxp_lib::bus::remote_join(d, &e.name);
+                    let to = flashfxp_lib::bus::remote_join(d, &name);
                     self.send(UiCmd::RemoteRename { from, to });
                     self.refresh_remote();
                 }

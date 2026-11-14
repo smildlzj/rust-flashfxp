@@ -3,6 +3,10 @@ name = "rust-flashfxp"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "flashfxp_lib"
+path = "src/lib.rs"
+
 [dependencies]
 eframe = "0.31"
 egui_extras = { version = "0.31", features = ["serde"] }

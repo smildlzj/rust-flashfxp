@@ -7,6 +7,7 @@ pub mod tls;
 
 use crate::store::{Proxy, Site};
 
+pub use ftp::run_backend;
 use ftp::FtpSession;
 use sftp::SftpBackend;
 
