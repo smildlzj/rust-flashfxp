@@ -24,6 +24,8 @@ export async function init() {
 // ---- commands ----
 export const api = {
   homeDir: () => invoke('home_dir'),
+  diskInfo: (path) => invoke('disk_info', { path }),
+  treeList: (path) => invoke('tree_list', { path }),
   quickConnect: (args) => invoke('quick_connect', args),
   connectSite: (siteId) => invoke('connect_site', { siteId }),
   disconnect: () => invoke('disconnect'),

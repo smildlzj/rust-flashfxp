@@ -74,7 +74,9 @@ pub fn run() {
             proxy_save,
             proxy_delete,
             queue_clear_finished,
-            home_dir
+            home_dir,
+            disk_info,
+            tree_list
         ])
         .run(tauri::generate_context!())
         .expect("Tauri 启动失败");
@@ -256,7 +258,7 @@ fn relay_transfer(args: RelayArgs) -> Result<(), String> {
     })
 }
 
-/// 重新入队未完成任务（连接成功后前端调用）
+/// 恢复未完成任务（仅恢复到界面等待状态，不自动执行；由用户在队列面板点“恢复待传”手动重放）
 #[tauri::command]
 fn restore_pending_queue() -> Result<Vec<serde_json::Value>, String> {
     let repo = SiteRepo::open().map_err(|e| e.to_string())?;
@@ -272,15 +274,6 @@ fn restore_pending_queue() -> Result<Vec<serde_json::Value>, String> {
             _ => (Direction::Upload, true, dst, src),
         };
         let id = counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let _ = send_cmd(UiCmd::Enqueue {
-            task: TransferTask {
-                id,
-                direction,
-                remote_path: remote.clone(),
-                local_path: local.clone().into(),
-                is_dir,
-            },
-        });
         out.push(serde_json::json!({
             "id": id,
             "dbId": db_id,
@@ -347,6 +340,37 @@ fn proxy_save(proxy: Proxy) -> Result<i64, String> {
 fn proxy_delete(proxy_id: i64) -> Result<(), String> {
     let repo = SiteRepo::open().map_err(|e| e.to_string())?;
     repo.delete_proxy(proxy_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn disk_info(path: String) -> Result<(u64, u64), String> {
+    use fs2::available_space;
+    let p = std::path::Path::new(&path);
+    let free = available_space(p).map_err(|e| e.to_string())?;
+    let total = fs2::total_space(p).map_err(|e| e.to_string())?;
+    Ok((free, total))
+}
+
+/// 目录树：列出指定目录的子目录（供左侧树懒加载）
+#[tauri::command]
+fn tree_list(path: String) -> Result<Vec<serde_json::Value>, String> {
+    let mut out = Vec::new();
+    let rd = std::fs::read_dir(&path).map_err(|e| e.to_string())?;
+    for entry in rd.flatten() {
+        let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        if !is_dir {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let hidden = name.starts_with('.');
+        out.push(serde_json::json!({
+            "name": name,
+            "path": format!("{}/{}", path.trim_end_matches('/'), name),
+            "hidden": hidden,
+        }));
+    }
+    out.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+    Ok(out)
 }
 
 #[tauri::command]

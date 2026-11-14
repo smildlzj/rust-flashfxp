@@ -880,6 +880,7 @@ pub fn list_local(path: &Path) -> Vec<Entry> {
                 size,
                 mtime,
                 is_symlink: false,
+                perms: None,
             });
         }
     }

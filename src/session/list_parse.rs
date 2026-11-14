@@ -36,6 +36,7 @@ fn parse_mlsx(line: &str) -> Option<Entry> {
         size: 0,
         mtime: None,
         is_symlink: false,
+        perms: None,
     };
     let mut saw_fact = false;
     for fact in facts_str.split(';') {
@@ -53,6 +54,8 @@ fn parse_mlsx(line: &str) -> Option<Entry> {
             },
             "size" => entry.size = val.parse().unwrap_or(0),
             "modify" => entry.mtime = parse_mlsx_time(val),
+            "unix.mode" => entry.perms = Some(format_mode(val)),
+            "unique" => {}
             _ => {}
         }
     }
@@ -65,6 +68,24 @@ fn parse_mlsx(line: &str) -> Option<Entry> {
     }
     entry.name = name.to_string();
     Some(entry)
+}
+
+/// "0755" → "drwxr-xr-x"（首字符由调用方 is_dir 决定，这里只给 rwx 串）
+fn format_mode(mode: &str) -> String {
+    let m = if let Some(stripped) = mode.strip_prefix('0') {
+        stripped
+    } else {
+        mode
+    };
+    let bits: u32 = m.parse().unwrap_or(0);
+    let bit = |i: u32| ((bits >> i) & 1) != 0;
+    let tri = |o| {
+        let r = if bit(o + 2) { 'r' } else { '-' };
+        let w = if bit(o + 1) { 'w' } else { '-' };
+        let x = if bit(o) { 'x' } else { '-' };
+        [r, w, x].iter().collect::<String>()
+    };
+    format!("{}{}{}", tri(6), tri(3), tri(0))
 }
 
 fn parse_mlsx_time(s: &str) -> Option<i64> {
@@ -91,6 +112,7 @@ fn parse_unix_list(line: &str) -> Option<Entry> {
     if perm.chars().count() < 10 || perm.chars().any(|c| c.is_whitespace()) {
         return None;
     }
+    let perm: String = line.chars().take(10).collect();
     let fields: Vec<&str> = line[10..].split_whitespace().collect();
 
     // 从权限后字段里定位“size 月 日 时间”四元组，适配有无 group 列
@@ -113,6 +135,7 @@ fn parse_unix_list(line: &str) -> Option<Entry> {
                 is_symlink: c0 == 'l',
                 size,
                 mtime: parse_unix_time(fields[i + 1], fields[i + 2], fields[i + 3]),
+                perms: Some(perm.clone()),
             });
         }
     }
@@ -185,6 +208,7 @@ fn parse_dos_list(line: &str) -> Option<Entry> {
         size,
         mtime: parse_dos_time(fields[0], fields[1]),
         is_symlink: false,
+        perms: None,
     })
 }
 

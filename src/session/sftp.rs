@@ -11,6 +11,18 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use crate::bus::{Entry, UiEvent};
 use crate::store::Site;
 
+/// 0o755 + is_dir → "drwxr-xr-x"
+fn format_mode_u32(bits: u32, is_dir: bool) -> String {
+    let bit = |i: u32| ((bits >> i) & 1) != 0;
+    let tri = |o| {
+        let r = if bit(o + 2) { 'r' } else { '-' };
+        let w = if bit(o + 1) { 'w' } else { '-' };
+        let x = if bit(o) { 'x' } else { '-' };
+        [r, w, x].iter().collect::<String>()
+    };
+    format!("{}{}{}{}", if is_dir { 'd' } else { '-' }, tri(6), tri(3), tri(0))
+}
+
 struct ClientHandler;
 
 #[async_trait]
@@ -84,12 +96,14 @@ impl SftpBackend {
             }
             let md = entry.metadata();
             let file_type = md.file_type();
+            let perms = md.permissions.map(|p| format_mode_u32(p, file_type.is_dir()));
             out.push(Entry {
                 name,
                 is_dir: file_type.is_dir(),
                 is_symlink: file_type.is_symlink(),
                 size: md.size.unwrap_or(0),
                 mtime: md.mtime.map(|t| t as i64),
+                perms,
             });
         }
         out.sort_by(|a, b| a.name.cmp(&b.name));
@@ -414,7 +428,7 @@ mod remote_tmp_tests {
         let sites = repo.list_sites().expect("读取站点");
         sites
             .into_iter()
-            .find(|s| s.id > 0 && s.host == "172.22.20.65")
+            .find(|s| s.id > 0 && s.host == "172.21.86.30")
             .expect("未找到配置的站点")
     }
 
@@ -428,7 +442,9 @@ mod remote_tmp_tests {
     #[ignore = "对用户配置的真实站点执行 /tmp 测试"]
     async fn remote_tmp_full_test() {
         let mut s = connect().await;
-        let base = format!("/tmp/rust-fx-test-{}", chrono::Utc::now().timestamp());
+        // 仅在 /tmp/rustftp 下操作
+        s.mkdir("/tmp/rustftp").await.ok();
+        let base = format!("/tmp/rustftp/t{}", chrono::Utc::now().timestamp());
         println!("测试目录: {base}");
         let (tx, _rx) = mpsc::channel::<UiEvent>();
 
@@ -507,8 +523,8 @@ mod remote_tmp_tests {
             }
         }
         s.delete(&base).await.unwrap();
-        let after = s.list("/tmp").await.unwrap();
-        assert!(after.iter().all(|e| e.name != base.trim_start_matches("/")));
+        let after = s.list("/tmp/rustftp").await.unwrap();
+        assert!(after.iter().all(|e| !e.name.starts_with('t') || e.name.len() != 11));
         let _ = std::fs::remove_dir_all(&dl_dir);
         let _ = std::fs::remove_file(&src);
         let _ = std::fs::remove_file(&back);

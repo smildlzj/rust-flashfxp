@@ -13,3 +13,4 @@ serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 flashfxp-lib = { path = "..", package = "rust-flashfxp" }
 chrono = "0.4"
+fs2 = "0.4"

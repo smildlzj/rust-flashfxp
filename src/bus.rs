@@ -46,6 +46,9 @@ pub struct Entry {
     pub size: u64,
     pub mtime: Option<i64>,
     pub is_symlink: bool,
+    /// 权限属性（如 drwxr-xr-x / 0755）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub perms: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
