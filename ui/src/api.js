@@ -41,6 +41,7 @@ export const api = {
   relay: (a) => invoke('relay_transfer', { args: a }),
   restoreQueue: () => invoke('restore_pending_queue'),
   queueClearFinished: () => invoke('queue_clear_finished'),
+  cancelTransfer: (id) => invoke('transfer_cancel', { id }),
   sites: () => invoke('sites_list'),
   saveSite: (site) => invoke('site_save', { site }),
   deleteSite: (siteId) => invoke('site_delete', { siteId }),

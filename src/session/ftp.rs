@@ -727,6 +727,15 @@ async fn run_transfers(
 ) {
     let mut session: Option<RemoteSession> = None;
     while let Some(task) = task_rx.recv().await {
+        // 任务开始前检查是否已被取消
+        if crate::session::ftp::take_cancelled(task.id) {
+            let _ = event_tx.send(UiEvent::TransferFinished {
+                id: task.id,
+                ok: false,
+                error: Some("已取消".into()),
+            });
+            continue;
+        }
         if session.is_none() {
             match RemoteSession::open(&site, proxy.as_ref()).await {
                 Ok(s) => session = Some(s),
@@ -860,6 +869,20 @@ fn walk_local(
     }
     Ok(())
 }
+
+/// 取消标记（由 Tauri 命令写入；传输 worker 在任务开始前消费）
+pub fn mark_cancelled(id: u64) {
+    let set = CANCEL_SET.get_or_init(|| std::sync::Mutex::new(std::collections::HashSet::new()));
+    let _ = set.lock().map(|mut s| s.insert(id));
+}
+
+pub fn take_cancelled(id: u64) -> bool {
+    let set = CANCEL_SET.get_or_init(|| std::sync::Mutex::new(std::collections::HashSet::new()));
+    set.lock().map(|mut s| s.remove(&id)).unwrap_or(false)
+}
+
+static CANCEL_SET: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<u64>>> =
+    std::sync::OnceLock::new();
 
 pub fn list_local(path: &Path) -> Vec<Entry> {
     let mut out = Vec::new();

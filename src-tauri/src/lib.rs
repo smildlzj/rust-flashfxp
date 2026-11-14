@@ -10,6 +10,37 @@ use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 
 static CMD_TX: OnceLock<UnboundedSender<UiCmd>> = OnceLock::new();
 static LAST_SITE: OnceLock<(Site, Option<Proxy>)> = OnceLock::new();
+static CANCELLED: OnceLock<std::sync::Mutex<std::collections::HashSet<u64>>> = OnceLock::new();
+static TASK_DB: OnceLock<std::sync::Mutex<std::collections::HashMap<u64, i64>>> = OnceLock::new();
+static RESTORED_DB: OnceLock<std::sync::Mutex<std::collections::HashSet<i64>>> = OnceLock::new();
+
+fn task_db() -> &'static std::sync::Mutex<std::collections::HashMap<u64, i64>> {
+    TASK_DB.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+fn restored_db() -> &'static std::sync::Mutex<std::collections::HashSet<i64>> {
+    RESTORED_DB.get_or_init(|| std::sync::Mutex::new(std::collections::HashSet::new()))
+}
+
+/// 记录任务 -> 数据库行映射（完成时更新数据库状态）
+fn track_task(id: u64, db_id: i64) {
+    let _ = task_db().lock().map(|mut m| m.insert(id, db_id));
+}
+
+fn cancelled_set() -> &'static std::sync::Mutex<std::collections::HashSet<u64>> {
+    CANCELLED.get_or_init(|| std::sync::Mutex::new(std::collections::HashSet::new()))
+}
+
+/// 取消传输任务（等待中的任务在开始前生效）
+#[tauri::command]
+fn transfer_cancel(id: u64) -> Result<bool, String> {
+    let mut set = cancelled_set().lock().map_err(|e| e.to_string())?;
+    let first = set.insert(id);
+    if first {
+        flashfxp_lib::session::ftp::mark_cancelled(id);
+    }
+    Ok(first)
+}
 
 fn send_cmd(cmd: UiCmd) -> Result<(), String> {
     CMD_TX
@@ -38,12 +69,28 @@ pub fn run() {
                 })
                 .expect("启动后台线程失败");
 
-            // 事件转发到前端
+            // 事件转发到前端（并维护队列持久化状态）
             let handle: AppHandle = app.handle().clone();
             std::thread::Builder::new()
                 .name("event-bridge".into())
                 .spawn(move || {
                     while let Ok(ev) = event_rx.recv() {
+                        if let UiEvent::TransferFinished { id, ok, error } = &ev {
+                            let db_id = task_db().lock().ok().and_then(|mut m| m.remove(id));
+                            if let Some(db_id) = db_id {
+                                if let Ok(repo) = SiteRepo::open() {
+                                    if *ok {
+                                        let _ = repo.queue_finish(db_id);
+                                    } else {
+                                        let _ = repo.queue_fail(db_id, error.as_deref().unwrap_or(""));
+                                    }
+                                    // 取消的任务不再保留
+                                    if error.as_deref() == Some("已取消") {
+                                        let _ = repo.queue_fail(db_id, "已取消");
+                                    }
+                                }
+                            }
+                        }
                         let _ = handle.emit("fx-event", &ev);
                     }
                 })
@@ -76,7 +123,8 @@ pub fn run() {
             queue_clear_finished,
             home_dir,
             disk_info,
-            tree_list
+            tree_list,
+            transfer_cancel
         ])
         .run(tauri::generate_context!())
         .expect("Tauri 启动失败");
@@ -199,8 +247,11 @@ fn enqueue_transfer(args: EnqueueArgs) -> Result<(), String> {
         (Direction::Upload, true) => "upload_dir",
         _ => "upload",
     };
-    if let Ok(repo) = SiteRepo::open() {
-        let _ = repo.queue_add(kind, &args.remote_path, &args.local_path, 0);
+    let db_id = SiteRepo::open()
+        .ok()
+        .and_then(|repo| repo.queue_add(kind, &args.remote_path, &args.local_path, 0).ok());
+    if let Some(db_id) = db_id {
+        track_task(args.id, db_id);
     }
     send_cmd(UiCmd::Enqueue {
         task: TransferTask {
@@ -266,14 +317,23 @@ fn restore_pending_queue() -> Result<Vec<serde_json::Value>, String> {
     let mut out = Vec::new();
     static NEXT_ID: OnceLock<std::sync::atomic::AtomicU64> = OnceLock::new();
     let counter = NEXT_ID.get_or_init(|| std::sync::atomic::AtomicU64::new(1));
+    let already_restored: Vec<i64> = restored_db()
+        .lock()
+        .map(|set| set.iter().copied().collect())
+        .unwrap_or_default();
     for (db_id, kind, src, dst) in pending {
+        if already_restored.contains(&db_id) {
+            continue; // 本次会话已恢复过，避免重复
+        }
         let (direction, is_dir, remote, local) = match kind.as_str() {
             "download" => (Direction::Download, false, src, dst),
             "download_dir" => (Direction::Download, true, src, dst),
             "upload" => (Direction::Upload, false, dst, src),
             _ => (Direction::Upload, true, dst, src),
         };
+        let _ = restored_db().lock().map(|mut set| set.insert(db_id));
         let id = counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        track_task(id, db_id);
         out.push(serde_json::json!({
             "id": id,
             "dbId": db_id,

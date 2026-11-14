@@ -27,6 +27,14 @@ import { api, init, onEvent, remoteJoin, remoteParent, humanSize } from './api.j
 let nextId = 1
 
 export default function App() {
+  // ---- UI 配置持久化（localStorage；须在所有使用它的 useState 之前） ----
+  const uiPref = {
+    get: (k, d) => {
+      try { const v = localStorage.getItem('fx.ui.' + k); return v === null ? d : JSON.parse(v) } catch { return d }
+    },
+    set: (k, v) => { try { localStorage.setItem('fx.ui.' + k, JSON.stringify(v)) } catch {} },
+  }
+
   const [connected, setConnected] = useState(false)
   const [currentSite, setCurrentSite] = useState(null)
   const [homePath, setHomePath] = useState('')
@@ -44,20 +52,23 @@ export default function App() {
   const [sortRemote, setSortRemote] = useState({ key: 'name', desc: false })
   const [localMarks, setLocalMarks] = useState({})
   const [remoteMarks, setRemoteMarks] = useState({})
-  const [syncBrowse, setSyncBrowse] = useState(false)
+  const [syncBrowse, setSyncBrowse] = useState(() => uiPref.get('syncBrowse', false))
 
   const [queue, setQueue] = useState([])
   const [log, setLog] = useState([])
-  const [showBottom, setShowBottom] = useState(true)
-  const [bottomTab, setBottomTab] = useState('queue')
+  const [showBottom, setShowBottom] = useState(() => uiPref.get('showBottom', true))
+  const [bottomTab, setBottomTab] = useState(() => uiPref.get('bottomTab', 'queue'))
 
-  const [showTree, setShowTree] = useState(true)
+  const [showTree, setShowTree] = useState(() => uiPref.get('showTree', true))
   const [siteManagerOpen, setSiteManagerOpen] = useState(false)
   const [proxyManagerOpen, setProxyManagerOpen] = useState(false)
   const [relayOpen, setRelayOpen] = useState(false)
   const [aboutOpen, setAboutOpen] = useState(false)
 
-  const [qc, setQc] = useState({ host: '', port: '21', user: '', pass: '' })
+  const [qc, setQc] = useState(() => ({
+    host: uiPref.get('qcHost', ''), port: uiPref.get('qcPort', '21'),
+    user: uiPref.get('qcUser', ''), pass: '',
+  }))
   const [prompt, setPrompt] = useState(null) // {title, value, apply}
 
   // 事件回调注册于首次渲染，读状态必须经 ref 取最新值
@@ -114,6 +125,7 @@ export default function App() {
       return
     }
     if (p.LocalList) {
+      uiPref.set('localDir', p.LocalList.path)
       setLocalDir(p.LocalList.path)
       setLocalEntries(p.LocalList.entries)
       setLocalSel(null)
@@ -345,12 +357,25 @@ export default function App() {
         onEvent(handleEvent)
         const home = await api.homeDir()
         setHomePath(home)
-        navLocal(home)
+        const lastDir = uiPref.get('localDir', '')
+        // 恢复上次浏览的本地目录（存在才用）
+        if (lastDir) {
+          api.treeList(lastDir).then(() => navLocal(lastDir)).catch(() => navLocal(home))
+        } else {
+          navLocal(home)
+        }
       } catch (e) {
         toast.error(`初始化失败: ${e}`)
       }
     })()
   }, [])
+
+  // 配置变更持久化
+  useEffect(() => { uiPref.set('showTree', showTree) }, [showTree])
+  useEffect(() => { uiPref.set('showBottom', showBottom) }, [showBottom])
+  useEffect(() => { uiPref.set('bottomTab', bottomTab) }, [bottomTab])
+  useEffect(() => { uiPref.set('syncBrowse', syncBrowse) }, [syncBrowse])
+  useEffect(() => { uiPref.set('qcHost', qc.host); uiPref.set('qcPort', qc.port); uiPref.set('qcUser', qc.user) }, [qc])
 
   // 动态标题
   useEffect(() => {
@@ -416,9 +441,32 @@ export default function App() {
         case 'nav':
           a().navLocal(cmd.slice(4))
           break
+        case 'reload':
+          window.location.reload()
+          break
         case 'refresh':
           a().refreshLocal(); a().refreshRemote()
           break
+        case 'rmenu': {
+          const n = Number(args[0] || 0)
+          const rows = document.querySelectorAll('.listview tbody tr')
+          const el = rows[n]
+          if (el) {
+            el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, button: 2, buttons: 2, pointerId: 1, pointerType: 'mouse' }))
+            el.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, button: 2, pointerId: 1, pointerType: 'mouse' }))
+            el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+          }
+          break
+        }
+        case 'rmenubg': {
+          const pane = document.querySelectorAll('.listview')[Number(args[0] || 0)]
+          if (pane) {
+            pane.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, button: 2, buttons: 2, pointerId: 1, pointerType: 'mouse' }))
+            pane.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, button: 2, pointerId: 1, pointerType: 'mouse' }))
+            pane.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+          }
+          break
+        }
       }
     }
     let last = ''
@@ -611,10 +659,16 @@ export default function App() {
                           <Progress value={q.size ? Math.min(100, (q.transferred / q.size) * 100) : 0} className="h-2.5" />
                         </TableCell>
                         <TableCell className="py-0.5 text-xs">
-                          {q.status === 'waiting' && <span className="text-muted-foreground">等待</span>}
+                          {q.status === 'waiting' && (
+                            <span className="flex items-center gap-1">
+                              <span className="text-muted-foreground">等待</span>
+                              <button title="取消该任务" className="text-red-600 hover:text-red-700"
+                                      onClick={() => api.cancelTransfer(q.id)}>✕</button>
+                            </span>
+                          )}
                           {q.status === 'active' && <span className="text-blue-600">传输中</span>}
                           {q.status === 'done' && <span className="text-green-600 flex items-center gap-0.5"><Check className="h-3 w-3" />完成</span>}
-                          {q.status === 'failed' && <span title={q.error} className="flex items-center gap-0.5"><X className="h-3 w-3" />失败</span>}
+                          {q.status === 'failed' && <span title={q.error} className="flex items-center gap-0.5"><X className="h-3 w-3" />{q.error === '已取消' ? '已取消' : '失败'}</span>}
                         </TableCell>
                       </TableRow>
                     ))}

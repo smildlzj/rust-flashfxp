@@ -10,6 +10,9 @@ import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import {
+  ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger,
+} from '@/components/ui/context-menu'
 
 function IconBtn({ icon: Icon, title, disabled, onClick, className }) {
   return (
@@ -113,7 +116,9 @@ export default function FilePane({
           </span>
         )}
       </div>
-      {/* 文件列表 */}
+      {/* 文件列表（右键菜单） */}
+      <ContextMenu>
+      <ContextMenuTrigger asChild>
       <ScrollArea className="flex-1 min-h-0">
         {entries.length > 0 ? (
           <Table>
@@ -127,8 +132,9 @@ export default function FilePane({
             </TableHeader>
             <TableBody>
               {entries.map((e, i) => (
+                <ContextMenu key={e.name}>
+                <ContextMenuTrigger asChild>
                 <TableRow
-                  key={e.name}
                   draggable
                   onDragStart={(ev) => {
                     ev.dataTransfer.setData('application/x-fx-drag', JSON.stringify({ pane, name: e.name, isDir: e.isDir }))
@@ -164,6 +170,20 @@ export default function FilePane({
                     </TableCell>
                   )}
                 </TableRow>
+                </ContextMenuTrigger>
+                <ContextMenuContent className="text-xs">
+                  <ContextMenuItem disabled={!connected} onClick={() => onAction('transfer')}>
+                    {pane === 'local' ? '⇧ 上传到远程' : '⇩ 下载到本地'}
+                  </ContextMenuItem>
+                  <ContextMenuSeparator />
+                  <ContextMenuItem onClick={() => onAction('rename')}>✎ 重命名</ContextMenuItem>
+                  <ContextMenuItem className="text-red-600" onClick={() => onAction('delete')}>✖ 删除</ContextMenuItem>
+                  <ContextMenuSeparator />
+                  <ContextMenuItem onClick={() => navigator.clipboard?.writeText(
+                    pane === 'local' ? `${address}/${e.name}` : (address || '') + '/' + e.name,
+                  )}>复制路径</ContextMenuItem>
+                </ContextMenuContent>
+                </ContextMenu>
               ))}
             </TableBody>
           </Table>
@@ -175,6 +195,14 @@ export default function FilePane({
           <div className="h-24 flex items-center justify-center text-sm text-muted-foreground">（空目录）</div>
         )}
       </ScrollArea>
+      </ContextMenuTrigger>
+      <ContextMenuContent className="text-xs">
+        <ContextMenuItem onClick={onRefresh}>⟳ 刷新</ContextMenuItem>
+        <ContextMenuItem onClick={() => onAction('mkdir')}>＋ 新建目录</ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem disabled={!connected} onClick={() => onAction('compare')}>⇋ 与对侧比较</ContextMenuItem>
+      </ContextMenuContent>
+      </ContextMenu>
       {/* 栏底统计条 */}
       <div className={cn(
         'flex items-center justify-between px-3 py-1 text-xs border-t flex-none',
