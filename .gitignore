@@ -8,3 +8,5 @@ src-tauri/gen/
 .codegraph/
 docs/plans/
 .workbuddy/
+.venv-dmg/
+src-tauri/dmg/preview*.png

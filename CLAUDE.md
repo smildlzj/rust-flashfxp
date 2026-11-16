@@ -12,7 +12,7 @@
 
 - `src/` 核心库 `flashfxp_lib`（与 UI 框架无关）；`src-tauri/` Tauri 2 后端（单文件 lib.rs）；`ui/` React 18 前端。曾从 egui 整体迁到 Tauri，核心库零改动。
 - 死代码保留勿删：egui 旧版（`src/main.rs` + `src/app/`）、`ui/src/icons.jsx`；删除需全量重编译/重装依赖。
-- 运行时数据：`~/.rust-flashfxp/flashfxp.db` 与 `~/Library/Application Support/com.rustflashfxp.app/window_state.json`（详见 `docs/configuration.md`）。
+- 运行时数据：`~/.rust-flashfxp/flashfxp.db` 与 `~/Library/Application Support/com.github.smildlzj.rustflashfxp/window_state.json`（详见 `docs/configuration.md`）。
 
 ## 构建与测试
 

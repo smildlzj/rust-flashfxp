@@ -29,6 +29,14 @@ npx --prefix ui tauri build   # 正式打包桌面应用
 | macOS | Intel（x86_64） | `.dmg` |
 | Windows | x64（MSVC） | NSIS 安装程序 `.exe` |
 
+下载文件统一命名为 `Rust-Flash-Ftp-v<版本>-<平台>-<架构>.<格式>`，例如：
+
+- `Rust-Flash-Ftp-v0.1.0-darwin-arm64.dmg`
+- `Rust-Flash-Ftp-v0.1.0-darwin-x64.dmg`
+- `Rust-Flash-Ftp-v0.1.0-windows-x64.exe`
+
+Actions 的 Artifact 使用相同名称但不带安装包扩展名，下载后为 ZIP，解压得到对应安装包。
+
 ### 手动打包
 
 将代码推送到 GitHub 默认分支后，进入 **Actions → Build desktop installers → Run workflow**，选择分支运行。
@@ -56,6 +64,27 @@ npx --prefix ui tauri build   # 正式打包桌面应用
 
 macOS 包使用 ad-hoc 签名（`src-tauri/tauri.macos.conf.json`），无需 Apple 证书，但尚未经过 Apple 公证；首次运行可能需要在「系统设置 → 隐私与安全性」允许打开。
 Windows 安装包没有商业代码签名，可能显示 SmartScreen 提示。以后若需要可信签名与公证，可再接入相应证书和 Secrets。
+
+### DMG 安装窗口
+
+安装窗口采用浅色背景、中文拖拽提示、左侧应用和右侧 Applications，窗口大小为 720 × 440。
+背景包含普通与 Retina 分辨率，资源位于 `src-tauri/dmg/`；修改绘图源码后，在 macOS 仓库根目录运行 `swift scripts/dmg/render-background.swift` 重新生成。
+运行时添加 `--preview` 可生成包含示意图标的布局预览；预览图不会作为安装背景打包。
+
+Actions 先用 Tauri 生成 `.app`，再使用 `dmgbuild` 直接写入背景和 Finder 布局，避免依赖 CI 上的 Finder 自动化权限。
+本地要生成相同样式，可先生成应用包，再运行打包脚本（Python 3.12）：
+
+```bash
+# 在 src-tauri/ 内生成 .app 后，回到仓库根目录运行下方命令
+# npx --no-install --prefix ../ui tauri build --ci --bundles app -- --locked
+python3 -m venv .venv-dmg
+.venv-dmg/bin/python -m pip install -r scripts/dmg/requirements.txt
+.venv-dmg/bin/python scripts/dmg/build.py \
+  --app "src-tauri/target/release/bundle/macos/Rust Flash Ftp.app" \
+  --output "src-tauri/target/release/bundle/dmg/Rust Flash Ftp.dmg"
+```
+
+如果构建时传入 `--target`，需要在 `target/` 后补上对应 target triple。
 
 ## 本地开发
 

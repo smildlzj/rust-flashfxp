@@ -2,7 +2,13 @@
   "$schema": "https://schema.tauri.app/config/2",
   "bundle": {
     "macOS": {
-      "signingIdentity": "-"
+      "signingIdentity": "-",
+      "dmg": {
+        "background": "dmg/background.tiff",
+        "windowSize": { "width": 720, "height": 440 },
+        "appPosition": { "x": 190, "y": 232 },
+        "applicationFolderPosition": { "x": 530, "y": 232 }
+      }
     }
   }
 }

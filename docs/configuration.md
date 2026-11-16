@@ -14,7 +14,7 @@ rusqlite 数据库，表：`sites` / `groups` / `proxies` / `queue_items` / `app
 
 队列任务持久化于 `queue_items`；应用重启后队列**手动恢复**（▶ 恢复待传），属刻意设计，防止遗留任务自动重放到其他站点。
 
-### `~/Library/Application Support/com.rustflashfxp.app/window_state.json`
+### `~/Library/Application Support/com.github.smildlzj.rustflashfxp/window_state.json`
 
 窗口位置与尺寸（物理像素单位）。窗口 Moved/Resized 事件防抖 500ms 后落盘，启动时恢复；dev 重启为强杀进程，不依赖退出钩子。
 
