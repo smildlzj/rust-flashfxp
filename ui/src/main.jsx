@@ -9,21 +9,41 @@ window.addEventListener('contextmenu', (e) => {
   e.preventDefault()
 })
 
-window.addEventListener('error', (e) => {
-  const d = document.createElement('pre')
-  d.style.cssText = 'position:fixed;top:40px;left:20px;z-index:99999;color:#fff;background:#c00;padding:12px;max-width:90vw;white-space:pre-wrap;font:12px monospace'
-  d.textContent = 'RUNTIME-ERROR: ' + (e.error?.stack || e.message)
-  document.body.appendChild(d)
-})
-window.addEventListener('unhandledrejection', (e) => {
-  const d = document.createElement('pre')
-  d.style.cssText = 'position:fixed;top:40px;left:20px;z-index:99999;color:#fff;background:#a00;padding:12px;max-width:90vw;white-space:pre-wrap;font:12px monospace'
-  d.textContent = 'REJECTION: ' + String(e.reason?.stack || e.reason)
-  document.body.appendChild(d)
-})
+// 把任何未捕获错误直接画到界面上，避免“白屏无信息”
+function paintError(label, err) {
+  try {
+    const msg = (err && (err.message || err.reason?.message)) || String(err)
+    const stack = (err && (err.stack || err.reason?.stack)) || ''
+    console.error('[Rust Flash Ftp]', label, err)
+    const d = document.createElement('pre')
+    d.setAttribute('data-fx-error', '1')
+    d.style.cssText = 'position:fixed;inset:0;z-index:99999;color:#fff;background:#7f1d1d;padding:24px;margin:0;overflow:auto;white-space:pre-wrap;font:12px/1.5 ui-monospace,monospace'
+    d.textContent = `RUNTIME-ERROR (${label})\n\n${msg}\n\n${stack}`
+    document.body.appendChild(d)
+  } catch {}
+}
+window.addEventListener('error', (e) => paintError('error', e.error || e))
+window.addEventListener('unhandledrejection', (e) => paintError('rejection', e.reason || e))
 
-createRoot(document.getElementById('root')).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-)
+// 兜底 ErrorBoundary：覆盖渲染期/生命周期错误（module 级错误由上面的 try/catch 兜）
+class FxErrorBoundary extends React.Component {
+  constructor(p) { super(p); this.state = { err: null } }
+  static getDerivedStateFromError(err) { return { err } }
+  componentDidCatch(err) { paintError('boundary', err) }
+  render() {
+    if (this.state.err) return null // paintError 已绘制
+    return this.props.children
+  }
+}
+
+try {
+  createRoot(document.getElementById('root')).render(
+    <React.StrictMode>
+      <FxErrorBoundary>
+        <App />
+      </FxErrorBoundary>
+    </React.StrictMode>
+  )
+} catch (err) {
+  paintError('mount', err)
+}

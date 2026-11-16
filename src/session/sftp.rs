@@ -83,9 +83,15 @@ impl SftpBackend {
     }
 
     pub async fn list(&mut self, path: &str) -> Result<Vec<Entry>, String> {
+        self.list_with_path(path).await.map(|(_, entries)| entries)
+    }
+
+    pub async fn list_with_path(&mut self, path: &str) -> Result<(String, Vec<Entry>), String> {
+        let canonical = self.sftp.canonicalize(path).await
+            .map_err(|e| format!("解析远程目录失败: {e}"))?;
         let rd = self
             .sftp
-            .read_dir(path)
+            .read_dir(&canonical)
             .await
             .map_err(|e| format!("列出目录失败: {e}"))?;
         let mut out = Vec::new();
@@ -107,11 +113,8 @@ impl SftpBackend {
             });
         }
         out.sort_by(|a, b| a.name.cmp(&b.name));
-        // 解析规范路径并缓存（相对路径导航后仍取绝对路径）
-        if let Ok(c) = self.sftp.canonicalize(path).await {
-            self.cwd = c;
-        }
-        Ok(out)
+        self.cwd = canonical.clone();
+        Ok((canonical, out))
     }
 
     pub async fn mkdir(&mut self, path: &str) -> Result<(), String> {
@@ -357,6 +360,12 @@ mod tests {
             login_cmds: None,
             proxy_id: None,
             tls_accept_invalid: false,
+            local_path: None,
+            remote_path: None,
+            account: None,
+            notes: String::new(),
+            login_type: "normal".into(),
+            timezone_offset_minutes: None,
         }
     }
 

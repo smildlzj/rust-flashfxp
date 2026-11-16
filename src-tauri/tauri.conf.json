@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Rust FlashFXP",
+  "productName": "Rust Flash Ftp",
   "version": "0.1.0",
   "identifier": "com.rustflashfxp.app",
   "build": {
@@ -12,11 +12,12 @@
   "app": {
     "windows": [
       {
-        "title": "Rust FlashFXP",
-        "width": 1100,
-        "height": 720,
+        "title": "Rust Flash Ftp",
+        "width": 1213,
+        "height": 731,
         "minWidth": 900,
         "minHeight": 600,
+        "decorations": true,
         "dragDropEnabled": true
       }
     ],
@@ -27,6 +28,13 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": ["icons/icon.png"]
+    "icon": [
+      "icons/32x32.png",
+      "icons/64x64.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
   }
 }

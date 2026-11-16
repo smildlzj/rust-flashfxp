@@ -14,5 +14,8 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
   },
+  optimizeDeps: {
+    include: ['react', 'react-dom/client', '@tauri-apps/api/core', '@tauri-apps/api/event'],
+  },
   clearScreen: false,
 })

@@ -44,6 +44,14 @@ impl RemoteSession {
         }
     }
 
+    /// A listing and its server-resolved absolute path must be published together.
+    pub async fn list_with_path(&mut self, path: &str) -> Result<(String, Vec<crate::bus::Entry>), String> {
+        match self {
+            Self::Ftp(s) => s.list_with_path(path).await,
+            Self::Sftp(s) => s.list_with_path(path).await,
+        }
+    }
+
     pub async fn mkdir(&mut self, path: &str) -> Result<(), String> {
         match self {
             Self::Ftp(s) => s.mkdir(path).await,

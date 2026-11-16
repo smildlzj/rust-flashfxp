@@ -1,84 +1,77 @@
-import React, { useEffect, useState } from 'react'
-import { cn } from '@/lib/utils'
-import {
-  ChevronUp, RotateCw, Home, FolderPlus, Pencil, Trash2, Upload, Download, GitCompareArrows,
-  FileText, Folder,
-} from 'lucide-react'
+import React, { useState } from 'react'
+import { Ico } from '../winicons.jsx'
 import { humanSize, fmtTime } from '../api.js'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import {
-  ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger,
-} from '@/components/ui/context-menu'
 
-function IconBtn({ icon: Icon, title, disabled, onClick, className }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-7 w-7" disabled={disabled} onClick={onClick}>
-          <Icon className={cn('h-4 w-4', className)} />
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent side="bottom" className="text-xs">{title}</TooltipContent>
-    </Tooltip>
-  )
-}
-
-/** 地址栏：本地缓冲，回车/失焦变更后导航 */
-function AddressBar({ address, connected, onGo }) {
-  const [buf, setBuf] = useState(address || '')
-  useEffect(() => { setBuf(address || '') }, [address])
-  return (
-    <Input
-      className="h-7 flex-1 font-mono text-xs"
-      value={buf}
-      disabled={!connected}
-      placeholder="输入路径后回车"
-      onChange={(e) => setBuf(e.target.value)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' && buf) { onGo(buf); e.currentTarget.blur() }
-      }}
-      onBlur={() => { if (buf && buf !== address) onGo(buf) }}
-    />
-  )
-}
-
-const MARK_CLS = { same: 'text-green-600', only: 'text-blue-600', diff: 'text-amber-600' }
 const MARK_TXT = { same: '·', only: '＋', diff: '▲' }
 
 export default function FilePane({
-  pane, title, entries, selected, marks, address, connected, diskFree, host,
-  onNavigate, onRefresh, onSelect, onActivate, onAction, onAddressGo, onHome, onDropTransfer,
+  pane, title, entries, selected, marks, address, connected, diskFree, host, sort,
+  onNavigate, onRefresh, onSelect, onActivate, onAction, onAddressGo, onHome,
+  onContextMenu, onDropTransfer,
 }) {
   const [dragOver, setDragOver] = useState(false)
   const files = entries.filter(e => !e.isDir).length
   const dirs = entries.filter(e => e.isDir).length
   const total = entries.reduce((s, e) => s + (e.size || 0), 0)
-  const hasMarks = marks && Object.keys(marks).length > 0
-  const TransferIcon = pane === 'local' ? Upload : Download
+  const isLocal = pane === 'local'
 
   // 栏间拖放：本地 → 远程 = 上传；远程 → 本地 = 下载
   const handleDrop = (ev) => {
     ev.preventDefault()
     setDragOver(false)
     let payload = null
-    try {
-      payload = JSON.parse(ev.dataTransfer.getData('application/x-fx-drag'))
-    } catch {}
+    try { payload = JSON.parse(ev.dataTransfer.getData('application/x-fx-drag')) } catch {}
     if (!payload || payload.pane === pane || !connected) return
     const direction = pane === 'remote' ? 'upload' : 'download'
     onDropTransfer && onDropTransfer(direction, payload.name, payload.isDir)
   }
 
+  const rowMenu = (e, i) => {
+    const target = entries[i]
+    onSelect(i)
+    onContextMenu && onContextMenu(e, [
+      { label: isLocal ? '传输（上传到远程）' : '传输（下载到本地）', disabled: !connected, act: () => onAction('transfer', target) },
+      { label: '传送为…', disabled: true },
+      { sep: true },
+      { label: '重命名…', act: () => onAction('rename', target) },
+      { label: '删除', key: 'Del', act: () => onAction('delete', target) },
+      { sep: true },
+      { label: '新建目录…', key: 'F7', act: () => onAction('mkdir') },
+      { label: '刷新', key: 'F5', act: onRefresh },
+      { sep: true },
+      { label: '与对侧比较', disabled: !connected, act: () => onAction('compare') },
+      { label: '清除比较标记', act: () => onAction('clear-compare') },
+      { sep: true },
+      { label: '复制路径', act: () => navigator.clipboard?.writeText(`${address || ''}/${entries[i]?.name || ''}`) },
+      { label: '属性…', disabled: true },
+    ], i)
+  }
+
+  const bgMenu = (e) => {
+    onContextMenu && onContextMenu(e, [
+      { label: '刷新', key: 'F5', act: onRefresh },
+      { label: '上级目录', act: onNavigate },
+      { label: isLocal ? '主目录' : '根目录', act: onHome },
+      { sep: true },
+      { label: '新建目录…', key: 'F7', act: () => onAction('mkdir') },
+      { label: '与对侧比较', disabled: !connected, act: () => onAction('compare') },
+      { label: '清除比较标记', act: () => onAction('clear-compare') },
+      { sep: true },
+      { label: '按名称排序', act: () => onAction('sort-name') },
+      { label: '按大小排序', act: () => onAction('sort-size') },
+      { label: '按时间排序', act: () => onAction('sort-time') },
+    ])
+  }
+
+  const th = (key, label, cls = '') => (
+    <th className={`${cls} ${sort?.key === key ? 'fx-sorted' : ''} ${sort?.key === key && sort?.desc ? 'desc' : ''}`}
+        onClick={() => onAction(`sort-${key}`)}>{label}</th>
+  )
+
   return (
     <div
-      className={cn(
-        'flex-1 min-w-0 flex flex-col border rounded-md bg-card overflow-hidden',
-        dragOver && 'ring-2 ring-primary/60 border-primary',
-      )}
+      className="fx-pane"
+      style={{ outline: dragOver ? '2px dotted #316ac5' : undefined, outlineOffset: -3 }}
       onDragOver={(ev) => {
         if (!connected) return
         ev.preventDefault()
@@ -88,131 +81,73 @@ export default function FilePane({
       onDragLeave={() => setDragOver(false)}
       onDrop={handleDrop}
     >
-      {/* 页签 + 导航 + 地址栏 */}
-      <div className="flex items-center gap-1 px-2 py-1.5 border-b bg-muted/40 flex-none">
-        <span className={cn(
-          'px-3 py-0.5 rounded-t-md text-xs font-semibold border-b-2',
-          pane === 'local' ? 'border-green-600 text-green-800 bg-green-500/10' : 'border-blue-600 text-blue-800 bg-blue-500/10',
-        )}>{title}</span>
-        <IconBtn icon={ChevronUp} title="上级目录" onClick={onNavigate} />
-        <IconBtn icon={RotateCw} title="刷新" onClick={onRefresh} />
-        <IconBtn icon={Home} title="主目录" onClick={onHome} />
-        <AddressBar address={address} connected={connected} onGo={onAddressGo} />
-      </div>
-      {/* 操作按钮 */}
-      <div className="flex items-center gap-0.5 px-1.5 py-1 border-b flex-none">
-        <IconBtn icon={FolderPlus} title="新建目录" onClick={() => onAction('mkdir')} />
-        <IconBtn icon={Pencil} title="重命名" disabled={selected == null} onClick={() => onAction('rename')} />
-        <IconBtn icon={Trash2} title="删除" disabled={selected == null} onClick={() => onAction('delete')} className="text-red-600" />
-        <IconBtn icon={TransferIcon} title={pane === 'local' ? '上传到远程' : '下载到本地'}
-                 disabled={selected == null || !connected} onClick={() => onAction('transfer')} />
-        <IconBtn icon={GitCompareArrows} title="与对侧比较" disabled={!connected} onClick={() => onAction('compare')} />
-        {hasMarks && (
-          <span className="ml-2 text-xs text-muted-foreground">
-            <span className="text-green-600">· 相同</span>
-            <span className="mx-1 text-blue-600">＋ 仅本侧</span>
-            <span className="text-amber-600">▲ 大小不同</span>
-            <button className="ml-2 underline" onClick={() => onAction('clear-compare')}>清除比较</button>
-          </span>
-        )}
-      </div>
-      {/* 文件列表（右键菜单） */}
-      <ContextMenu>
-      <ContextMenuTrigger asChild>
-      <ScrollArea className="flex-1 min-h-0">
-        {entries.length > 0 ? (
-          <Table>
-            <TableHeader className="sticky top-0 z-10 bg-muted/60 backdrop-blur">
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="h-7 cursor-default select-none" onClick={() => onAction('sort-name')}>名称</TableHead>
-                <TableHead className="h-7 w-24 text-right cursor-default select-none" onClick={() => onAction('sort-size')}>大小</TableHead>
-                <TableHead className="h-7 w-32 cursor-default select-none" onClick={() => onAction('sort-time')}>修改时间</TableHead>
-                {pane === 'remote' && <TableHead className="h-7 w-28">属性</TableHead>}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {entries.map((e, i) => (
-                <ContextMenu key={e.name}>
-                <ContextMenuTrigger asChild>
-                <TableRow
-                  draggable
-                  onDragStart={(ev) => {
-                    ev.dataTransfer.setData('application/x-fx-drag', JSON.stringify({ pane, name: e.name, isDir: e.isDir }))
-                    ev.dataTransfer.setData('text/plain', e.name)
-                    ev.dataTransfer.effectAllowed = 'copy'
-                  }}
-                  className={cn('cursor-default', selected === i && 'bg-primary text-primary-foreground hover:bg-primary')}
-                  onClick={() => onSelect(i)}
-                  onDoubleClick={() => onActivate(i)}
-                >
-                  <TableCell className="py-0.5 max-w-0 truncate">
-                    <span className={cn(
-                      'flex items-center gap-1.5',
-                      e.isDir && 'font-medium text-blue-600',
-                      selected === i && 'text-primary-foreground',
-                    )}>
-                      {e.isDir
-                        ? <Folder className="h-3.5 w-3.5 flex-none text-amber-500" />
-                        : <FileText className={cn('h-3.5 w-3.5 flex-none', e.isSymlink ? 'text-teal-600' : 'text-muted-foreground')} />}
-                      <span className="truncate">{e.name}</span>
-                      {marks && marks[e.name] && (
-                        <span className={cn('text-xs', MARK_CLS[marks[e.name]], selected === i && 'text-primary-foreground')}>
-                          {MARK_TXT[marks[e.name]]}
-                        </span>
-                      )}
+      {/* 文件列表（ListView 报表） */}
+      <div className="fx-list-wrap fx-scroll" onContextMenu={bgMenu}>
+        <table className="fx-list listview">
+          <colgroup>
+            <col />
+            <col style={{ width: isLocal ? 66 : 62 }} />
+            <col style={{ width: isLocal ? 138 : 132 }} />
+            {!isLocal && <col style={{ width: 84 }} />}
+          </colgroup>
+          <thead>
+            <tr>
+              {th('name', '名称')}
+              {th('size', '大小', 'fx-th-right')}
+              {th('time', '修改时间')}
+              {!isLocal && <th>属性</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {/* 原版固定首行：上级目录 */}
+            <tr className="fx-row-up" onDoubleClick={onNavigate} onClick={() => onSelect(null)}>
+              <td>
+                <div className="fx-cell">
+                  <span className="fx-cell-icon"><Ico name="up" size={16} /></span>
+                  <span className="fx-cell-name">上级目录</span>
+                </div>
+              </td>
+              <td /><td />{!isLocal && <td />}
+            </tr>
+            {entries.map((e, i) => (
+              <tr
+                key={e.name}
+                draggable
+                className={`${selected === i ? 'fx-selected' : ''} ${marks && marks[e.name] ? `fx-mark-${marks[e.name]}` : ''}`}
+                onDragStart={(ev) => {
+                  ev.dataTransfer.setData('application/x-fx-drag', JSON.stringify({ pane, name: e.name, isDir: e.isDir }))
+                  ev.dataTransfer.setData('text/plain', e.name)
+                  ev.dataTransfer.effectAllowed = 'copy'
+                }}
+                onClick={() => onSelect(i)}
+                onDoubleClick={() => onActivate(i)}
+                onContextMenu={(ev) => rowMenu(ev, i)}
+              >
+                <td title={e.name}>
+                  <div className="fx-cell">
+                    <span className="fx-cell-icon">
+                      <Ico name={e.isDir ? 'folder' : 'file'} size={16} />
                     </span>
-                  </TableCell>
-                  <TableCell className="py-0.5 text-right text-xs text-muted-foreground">{e.isDir ? '' : humanSize(e.size)}</TableCell>
-                  <TableCell className="py-0.5 text-xs text-muted-foreground">{fmtTime(e.mtime)}</TableCell>
-                  {pane === 'remote' && (
-                    <TableCell className="py-0.5 font-mono text-xs text-muted-foreground">
-                      {e.perms ? (e.isDir ? 'd' : '-') + e.perms : ''}
-                    </TableCell>
-                  )}
-                </TableRow>
-                </ContextMenuTrigger>
-                <ContextMenuContent className="text-xs">
-                  <ContextMenuItem disabled={!connected} onClick={() => onAction('transfer')}>
-                    {pane === 'local' ? '⇧ 上传到远程' : '⇩ 下载到本地'}
-                  </ContextMenuItem>
-                  <ContextMenuSeparator />
-                  <ContextMenuItem onClick={() => onAction('rename')}>✎ 重命名</ContextMenuItem>
-                  <ContextMenuItem className="text-red-600" onClick={() => onAction('delete')}>✖ 删除</ContextMenuItem>
-                  <ContextMenuSeparator />
-                  <ContextMenuItem onClick={() => navigator.clipboard?.writeText(
-                    pane === 'local' ? `${address}/${e.name}` : (address || '') + '/' + e.name,
-                  )}>复制路径</ContextMenuItem>
-                </ContextMenuContent>
-                </ContextMenu>
-              ))}
-            </TableBody>
-          </Table>
-        ) : !connected && pane === 'remote' ? (
-          <div className="h-full flex items-center justify-center text-sm text-muted-foreground p-8">
-            未连接 — 请在上方快速连接或在站点管理器中选择站点
-          </div>
-        ) : (
-          <div className="h-24 flex items-center justify-center text-sm text-muted-foreground">（空目录）</div>
-        )}
-      </ScrollArea>
-      </ContextMenuTrigger>
-      <ContextMenuContent className="text-xs">
-        <ContextMenuItem onClick={onRefresh}>⟳ 刷新</ContextMenuItem>
-        <ContextMenuItem onClick={() => onAction('mkdir')}>＋ 新建目录</ContextMenuItem>
-        <ContextMenuSeparator />
-        <ContextMenuItem disabled={!connected} onClick={() => onAction('compare')}>⇋ 与对侧比较</ContextMenuItem>
-      </ContextMenuContent>
-      </ContextMenu>
-      {/* 栏底统计条 */}
-      <div className={cn(
-        'flex items-center justify-between px-3 py-1 text-xs border-t flex-none',
-        pane === 'local' ? 'bg-green-500/15 text-green-900' : 'bg-muted text-muted-foreground',
-      )}>
-        <span>
-          {files} 个文件, {dirs} 个文件夹, 共计 {files + dirs} 项 ({humanSize(total)}
-          {pane === 'local' && diskFree ? ` / ${humanSize(diskFree)} 可用` : ''})
-        </span>
-        <span className="font-medium">{pane === 'local' ? '本地浏览器' : (host || '')}</span>
+                    <span className="fx-cell-name">{e.name}</span>
+                    {marks && marks[e.name] && <span className="fx-mark">{MARK_TXT[marks[e.name]]}</span>}
+                  </div>
+                </td>
+                <td className="fx-num">{e.isDir ? '' : humanSize(e.size)}</td>
+                <td>{fmtTime(e.mtime)}</td>
+                {!isLocal && <td className="fx-perm">{e.perms ? (e.isDir ? 'd' : '-') + e.perms : ''}</td>}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* 栏底统计条（两行） */}
+      <div className={`fx-stat ${isLocal ? 'local' : 'remote'}`}>
+        <div className="fx-stat-line">
+          {files} 个文件, {dirs} 个文件夹, 共计 {files + dirs} 项 ({total ? humanSize(total) : '0 字节'}
+          {isLocal && diskFree ? ` / ${humanSize(diskFree)} 可用` : ''})
+        </div>
+        <div className="fx-stat-sub">{isLocal ? '本地浏览器' : (host || '')}</div>
       </div>
     </div>
   )

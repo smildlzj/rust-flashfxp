@@ -129,7 +129,7 @@ impl App {
                     }
                 });
                 ui.menu_button("帮助(H)", |ui| {
-                    if ui.button("关于 Rust FlashFXP").clicked() {
+                    if ui.button("关于 Rust Flash Ftp").clicked() {
                         self.show_about = true;
                         ui.close_menu();
                     }
@@ -244,6 +244,12 @@ impl App {
             login_cmds: None,
             proxy_id: None,
             tls_accept_invalid: false,
+            local_path: None,
+            remote_path: None,
+            account: None,
+            notes: String::new(),
+            login_type: "normal".into(),
+            timezone_offset_minutes: None,
         };
         self.queue.clear();
         let _ = self.repo.queue_clear_finished();
@@ -908,11 +914,11 @@ impl App {
 
     fn show_about(&mut self, ctx: &egui::Context) {
         let mut keep_open = true;
-        egui::Window::new("关于 Rust FlashFXP")
+        egui::Window::new("关于 Rust Flash Ftp")
             .open(&mut keep_open)
             .fixed_size([360.0, 150.0])
             .show(ctx, |ui| {
-                ui.heading("Rust FlashFXP 0.1");
+                ui.heading("Rust Flash Ftp 0.1");
                 ui.label("FTP / FTPS / SFTP 客户端 — Rust + egui 实现");
                 ui.weak("站点管理 · 断点续传 · 代理 · 同步浏览 · 目录比较 · 站点互传");
             });
@@ -971,6 +977,12 @@ impl App {
                             login_cmds: None,
                             proxy_id: None,
                             tls_accept_invalid: false,
+                            local_path: None,
+                            remote_path: None,
+                            account: None,
+                            notes: String::new(),
+                            login_type: "normal".into(),
+                            timezone_offset_minutes: None,
                         });
                         self.site_manager_tab = 0;
                     }

@@ -6,11 +6,11 @@ fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1100.0, 700.0])
-            .with_title("Rust FlashFXP"),
+            .with_title("Rust Flash Ftp"),
         ..Default::default()
     };
     eframe::run_native(
-        "Rust FlashFXP",
+        "Rust Flash Ftp",
         options,
         Box::new(|cc| Ok(Box::new(app::App::new(cc)))),
     )

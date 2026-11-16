@@ -1,21 +1,37 @@
 import React, { useEffect, useState } from 'react'
 import { api } from '../api.js'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Folder, FileText, Plus, X } from 'lucide-react'
+import { Ico } from '../winicons.jsx'
+import { WinButton, WinInput, WinCheck, WinCombo, WinTabs, WinFieldset, WinDialog } from '../win32.jsx'
 
 function blankSite() {
   return {
     id: 0, groupId: null, name: '', host: '', port: 21, protocol: 'ftp',
-    username: '', password: '', encoding: 'auto', passiveMode: true,
+    username: '', password: '', account: '', encoding: 'auto', passiveMode: true,
     proxyId: null, tlsAcceptInvalid: false,
+    localPath: '', remotePath: '', notes: '', loginType: 'normal', timezoneOffsetMinutes: null,
   }
+}
+
+/* 带「浏览…」按钮的路径输入行：本地路径用系统目录选择器，远程路径给常用快捷按钮。 */
+function PathField({ value, onChange, placeholder, remote }) {
+  const browseLocal = async () => {
+    try {
+      const picked = await api.pickFolder()
+      if (picked) onChange(picked)
+    } catch { /* 用户取消或系统不支持时忽略 */ }
+  }
+  return (
+    <div className="flex items-center gap-1.5">
+      <WinInput id={remote ? "site-remote-path" : "site-local-path"} className="min-w-0 flex-1" value={value || ''} placeholder={placeholder}
+                onChange={(e) => onChange(e.target.value)} />
+      {remote ? (
+        <WinButton compact variant="outline" title="填入根目录 /"
+                   onClick={() => onChange('/')}>/</WinButton>
+      ) : (
+        <WinButton compact variant="outline" title="浏览本地目录…" onClick={browseLocal}>浏览…</WinButton>
+      )}
+    </div>
+  )
 }
 
 export default function SiteManager({ open, onOpenChange, onConnected }) {
@@ -25,36 +41,52 @@ export default function SiteManager({ open, onOpenChange, onConnected }) {
   const [edit, setEdit] = useState(null)
   const [tab, setTab] = useState('general')
   const [newGroupName, setNewGroupName] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
 
   const reload = async () => {
-    setSites(await api.sites())
+    const list = await api.sites()
+    setSites(list)
     setGroups(await api.groups())
     setProxies(await api.proxies())
+    // 原版打开站点管理器默认选中首个站点并显示「常规」表单
+    setEdit(prev => prev || (list.length ? { ...list[0] } : null))
   }
-
-  useEffect(() => {
-    if (open) reload()
-  }, [open])
+  useEffect(() => { if (open) { setTab('general'); setError(''); reload().catch(e => setError(String(e))) } }, [open])
 
   const set = (k, v) => setEdit(e => ({ ...e, [k]: v }))
+  const close = () => onOpenChange(false)
 
   const toRaw = (s) => ({
     id: s.id || 0,
     groupId: s.groupId ?? null,
     name: s.name, host: s.host, port: Number(s.port) || 21,
     protocol: s.protocol,
-    username: s.username || '', password: s.password || '',
+    username: s.loginType === 'anonymous' ? 'anonymous' : (s.username || ''),
+    password: s.loginType === 'prompt' ? '' : (s.password || ''),
+    account: s.account || '',
     encoding: s.encoding, passiveMode: !!s.passiveMode,
-    loginCmds: null, proxyId: s.proxyId ?? null,
+    notes: s.notes || '', loginType: s.loginType || 'normal',
+    timezoneOffsetMinutes: s.timezoneOffsetMinutes ?? null,
+    loginCmds: s.loginCmds ?? null, proxyId: s.proxyId ?? null,
     tlsAcceptInvalid: !!s.tlsAcceptInvalid,
+    localPath: s.localPath || '', remotePath: s.remotePath || '',
   })
 
   const save = async (siteArg) => {
     const s = siteArg || edit
-    if (!s || !s.name.trim() || !s.host.trim()) return null
+    if (!s?.name?.trim() || !s?.host?.trim()) throw new Error('请填写站点名称和服务器地址')
+    if (!Number.isInteger(Number(s.port)) || Number(s.port) < 1 || Number(s.port) > 65535) throw new Error('端口须为 1–65535')
     const id = await api.saveSite(toRaw(s))
+    setEdit({ ...s, id })
     await reload()
     return id
+  }
+
+  const perform = async (action) => {
+    setBusy(true); setError('')
+    try { await action() } catch (e) { setError(String(e.message || e)) }
+    finally { setBusy(false) }
   }
 
   const remove = async () => {
@@ -69,9 +101,9 @@ export default function SiteManager({ open, onOpenChange, onConnected }) {
     const s = siteArg || edit
     if (!s || !s.host.trim()) return
     const id = await save(s)
-    await api.connectSite(id)
+    if (!await api.connectSite(id)) return
     onConnected({ ...s, id })
-    onOpenChange(false)
+    close()
   }
 
   const addGroup = async () => {
@@ -82,138 +114,172 @@ export default function SiteManager({ open, onOpenChange, onConnected }) {
     await reload()
   }
 
-  const renderTree = () => (
-    <ScrollArea className="h-[340px] rounded-md border bg-background p-1.5">
+  const siteRow = (s, indent) => (
+    <div key={s.id}
+      className={`fx-listbox-row ${edit && edit.id === s.id ? 'fx-selected' : ''}`}
+      style={{ paddingLeft: indent ? 20 : 5 }}
+      onClick={() => setEdit({ ...s })}
+      onDoubleClick={() => { setEdit({ ...s }); perform(() => connect({ ...s })) }}>
+      <Ico name="file" size={14} /><span>{s.name}</span>
+    </div>
+  )
+
+  const tree = (
+    <div className="fx-panel h-full overflow-auto">
       {groups.map(g => (
         <React.Fragment key={'g' + g.id}>
-          <div className="flex items-center gap-1.5 px-1 py-1 font-medium text-sm">
-            <Folder className="h-4 w-4 text-amber-500" />{g.name}
+          <div className="fx-listbox-row" style={{ fontWeight: 'bold' }}>
+            <Ico name="folderOpen" size={15} /><span>{g.name}</span>
           </div>
-          {sites.filter(x => x.groupId === g.id).map(s => (
-            <div key={s.id}
-                 className={`flex items-center gap-1.5 pl-5 pr-1 py-1 rounded-sm cursor-default text-sm ${edit && edit.id === s.id ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}
-                 onClick={() => setEdit({ ...s })}
-                 onDoubleClick={() => { setEdit({ ...s }); connect({ ...s }) }}>
-              <FileText className="h-3.5 w-3.5" />{s.name}
-            </div>
-          ))}
+          {sites.filter(x => x.groupId === g.id).map(s => siteRow(s, true))}
         </React.Fragment>
       ))}
-      {sites.filter(x => x.groupId == null).map(s => (
-        <div key={'u' + s.id}
-             className={`flex items-center gap-1.5 px-1.5 py-1 rounded-sm cursor-default text-sm ${edit && edit.id === s.id ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}
-             onClick={() => setEdit({ ...s })}
-             onDoubleClick={() => { setEdit({ ...s }); connect({ ...s }) }}>
-          <FileText className="h-3.5 w-3.5" />{s.name}
+      {sites.filter(x => x.groupId == null).map(s => siteRow(s, false))}
+      {!sites.length && <div className="fx-hint" style={{ padding: 8 }}>（暂无站点，请点击「新建站点」）</div>}
+    </div>
+  )
+
+  // 必须是惰性函数：edit 为 null 时不能提前求值（否则读取 edit.name 崩溃）
+  const general = () => {
+    const loginType = edit.loginType === 'prompt' ? 'prompt' :
+      (edit.loginType === 'anonymous' || edit.username === 'anonymous' ? 'anonymous' : 'normal')
+    const changeProtocol = (protocol) => setEdit(e => ({ ...e, protocol,
+      port: [21, 22, 990].includes(Number(e.port)) ? (protocol === 'sftp' ? 22 : protocol === 'ftps_implicit' ? 990 : 21) : e.port,
+      loginType: protocol === 'sftp' && loginType === 'anonymous' ? 'normal' : loginType,
+      username: protocol === 'sftp' && loginType === 'anonymous' ? '' : e.username,
+    }))
+    return (
+      <div className="fx-site-general fx-form-grid">
+        <label htmlFor="site-name">站点名称</label>
+        <WinInput id="site-name" value={edit.name || ''} onChange={e => set('name', e.target.value)} />
+        <label htmlFor="site-protocol">连接类型</label>
+        <WinCombo id="site-protocol" value={edit.protocol || 'ftp'} onChange={changeProtocol} options={[
+          { value: 'ftp', label: 'FTP' }, { value: 'sftp', label: 'SFTP over SSH' },
+          { value: 'ftps_implicit', label: 'FTP 使用隐式 SSL/TLS' },
+          { value: 'ftps_explicit', label: 'FTP 使用显式 TLS (AUTH TLS)' },
+        ]} />
+        <label htmlFor="site-host">地址</label>
+        <div className="fx-site-host">
+          <WinInput id="site-host" placeholder="ftp.example.com" value={edit.host || ''} onChange={e => set('host', e.target.value)} />
+          <label htmlFor="site-port">端口</label>
+          <WinInput id="site-port" inputMode="numeric" value={edit.port} onChange={e => set('port', e.target.value.replace(/\D/g, ''))} />
         </div>
-      ))}
-    </ScrollArea>
+        <label htmlFor="site-login">登录类型</label>
+        <WinCombo id="site-login" value={loginType} onChange={v => setEdit(e => ({ ...e, loginType: v,
+          username: v === 'anonymous' ? 'anonymous' : e.username === 'anonymous' ? '' : e.username,
+          password: v === 'prompt' || v === 'anonymous' ? '' : e.password,
+        }))} options={[
+          { value: 'normal', label: '普通' },
+          ...(edit.protocol !== 'sftp' ? [{ value: 'anonymous', label: '匿名' }] : []),
+          { value: 'prompt', label: '连接时提示输入密码' },
+        ]} />
+        <label htmlFor="site-user">用户名</label>
+        <WinInput id="site-user" disabled={loginType === 'anonymous'} value={edit.username || ''} onChange={e => set('username', e.target.value)} />
+        <label htmlFor="site-password">密码</label>
+        <WinInput id="site-password" type="password" autoComplete="new-password" disabled={loginType === 'prompt'}
+          placeholder={loginType === 'prompt' ? '连接时询问，不保存密码' : ''}
+          value={loginType === 'prompt' ? '' : edit.password || ''} onChange={e => set('password', e.target.value)} />
+        <label htmlFor="site-remote-path">远程路径</label>
+        <PathField remote value={edit.remotePath} placeholder="留空使用服务器默认目录" onChange={v => set('remotePath', v)} />
+        <label htmlFor="site-local-path">本地路径</label>
+        <PathField value={edit.localPath} placeholder="留空保留当前本地目录" onChange={v => set('localPath', v)} />
+        <label htmlFor="site-proxy">代理服务器</label>
+        <WinCombo id="site-proxy" value={String(edit.proxyId ?? '')} onChange={v => set('proxyId', v === '' ? null : Number(v))}
+          options={[{ value: '', label: '不使用代理' }, ...proxies.map(p => ({ value: String(p.id), label: p.name }))]} />
+        <label htmlFor="site-timezone">服务器时区</label>
+        <WinCombo id="site-timezone" value={edit.timezoneOffsetMinutes == null ? '' : String(edit.timezoneOffsetMinutes)}
+          onChange={v => set('timezoneOffsetMinutes', v === '' ? null : Number(v))} options={[
+            { value: '', label: '自动（优先使用服务器 UTC 时间）' },
+            ...Array.from({ length: 105 }, (_, i) => (i - 48) * 15).map(m => ({ value: String(m),
+              label: `UTC${m < 0 ? '−' : '+'}${String(Math.floor(Math.abs(m) / 60)).padStart(2, '0')}:${String(Math.abs(m) % 60).padStart(2, '0')}` })),
+          ]} />
+        <label htmlFor="site-notes" className="self-start pt-2">备注</label>
+        <textarea id="site-notes" className="fx-input fx-site-notes" placeholder="仅保存在本地，不发送给服务器"
+          value={edit.notes || ''} onChange={e => set('notes', e.target.value)} />
+      </div>
+    )
+  }
+
+  const advanced = () => (
+    <WinFieldset legend="高级设置">
+      <div className="fx-form-grid">
+        <label>账号 (ACCT):</label>
+        <WinInput value={edit.account || ''} onChange={e => set('account', e.target.value)} placeholder="可选 FTP 账号" />
+        <label>文件名编码:</label>
+        <WinCombo value={edit.encoding} onChange={(v) => set('encoding', v)} options={[
+          { value: 'auto', label: '自动检测' }, { value: 'utf-8', label: 'UTF-8' },
+          { value: 'gbk', label: 'GBK (简体中文)' }, { value: 'big5', label: 'Big5 (繁体中文)' },
+          { value: 'shift-jis', label: 'Shift-JIS (日文)' },
+        ]} />
+        <label>传输模式:</label>
+        <WinCombo value={edit.passiveMode ? 'passive' : 'active'}
+                  onChange={(v) => set('passiveMode', v === 'passive')}
+                  options={[{ value: 'passive', label: '被动模式 (PASV)' }, { value: 'active', label: '主动模式 (PORT)' }]} />
+        <label>代理:</label>
+        <WinCombo value={String(edit.proxyId ?? '')}
+                  onChange={(v) => set('proxyId', v === '' ? null : Number(v))}
+                  options={[{ value: '', label: '（无）' }, ...proxies.map(p => ({ value: String(p.id), label: p.name }))]} />
+        <label>分组:</label>
+        <WinCombo value={String(edit.groupId ?? '')}
+                  onChange={(v) => set('groupId', v === '' ? null : Number(v))}
+                  options={[{ value: '', label: '（无）' }, ...groups.map(g => ({ value: String(g.id), label: g.name }))]} />
+      </div>
+    </WinFieldset>
+  )
+
+  const options = () => (
+    <WinFieldset legend="选项">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '4px 0' }}>
+        <WinCheck checked={!!edit.passiveMode} onChange={(v) => set('passiveMode', v)} label="使用被动模式 (PASV)" />
+        <WinCheck checked={!!edit.tlsAcceptInvalid} onChange={(v) => set('tlsAcceptInvalid', v)} label="接受无效 SSL 证书（自签名服务器）" />
+        <WinCheck checked={String(edit.username).toLowerCase() === 'anonymous'}
+                  onChange={(v) => setEdit(e => ({ ...e, username: v ? 'anonymous' : '', password: '', loginType: v ? 'anonymous' : 'normal' }))}
+                  label="匿名登录" />
+        <div className="fx-hint" style={{ marginTop: 4 }}>
+          站点名称：{edit.name || '—'}　地址：{edit.host || '—'}<br />
+          协议：{String(edit.protocol || 'ftp').toUpperCase()}　端口：{edit.port}
+        </div>
+      </div>
+    </WinFieldset>
   )
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>站点管理器</DialogTitle>
-        </DialogHeader>
-        <div className="flex gap-2">
-          <Button onClick={() => connect()} disabled={!edit || !edit.id}><Plus className="mr-1" />连接(C)</Button>
-          <Button variant="outline" onClick={() => { setEdit(blankSite()); setTab('general') }}>新建站点(N)</Button>
-          <Button variant="outline" onClick={addGroup}>新建组(G)</Button>
-          <Button variant="outline" onClick={remove} disabled={!edit || !edit.id}>删除(D)</Button>
-          <div className="flex-1" />
-          <div className="flex items-center gap-1">
-            <Input className="h-8 w-32" placeholder="新分组名称" value={newGroupName} onChange={(e) => setNewGroupName(e.target.value)} />
-            <Button variant="outline" size="icon" className="h-8 w-8" onClick={addGroup}><Plus className="h-4 w-4" /></Button>
+    <WinDialog open={open} title="站点管理器" width={860} height={740} fixedHeight onClose={close}
+      contentClassName="overflow-hidden flex flex-col"
+      footer={<>
+        <WinButton variant="outline" onClick={close}>关闭(X)</WinButton>
+        <WinButton variant="outline" onClick={() => perform(() => save())} disabled={!edit || busy}>应用(A)</WinButton>
+        <WinButton onClick={() => perform(() => connect())} disabled={!edit || !edit.host || busy}>连接(C)</WinButton>
+      </>}>
+      <div className="fx-toolbar-row shrink-0">
+        <WinButton compact variant="outline" onClick={() => perform(() => connect())} disabled={!edit || !edit.id || busy}><Ico name="connect" size={14} /> 连接(C)</WinButton>
+        <WinButton compact onClick={() => { setEdit(blankSite()); setTab('general') }}>新建站点(N)</WinButton>
+        <WinButton compact variant="outline" onClick={() => perform(addGroup)}>新建组(G)</WinButton>
+        <WinButton compact variant="outline" onClick={() => perform(remove)} disabled={!edit || !edit.id}>删除(D)</WinButton>
+        <span style={{ flex: 1 }} />
+        <WinInput className="w-short" style={{ width: 120, height: 21 }} placeholder="新分组名称"
+                  value={newGroupName} onChange={(e) => setNewGroupName(e.target.value)} />
+        <WinButton compact variant="outline" onClick={() => perform(addGroup)}>+</WinButton>
+      </div>
+      <div className="flex min-h-0 flex-1 gap-2.5" style={{ marginTop: 6 }}>
+        <div className="fx-site-tree shrink-0 min-h-0">{tree}</div>
+        <div className="flex min-h-0 flex-1 flex-col" style={{ minWidth: 0 }}>
+          <WinTabs value={tab} onChange={setTab} tabs={[
+            { value: 'general', label: '常规' },
+            { value: 'advanced', label: '高级' },
+            { value: 'options', label: '选项' },
+          ]} />
+          <div className="fx-tab-content min-h-0 flex-1 overflow-auto">
+            {edit
+              ? (tab === 'general' ? general() : tab === 'advanced' ? advanced() : options())
+              : <div className="fx-center-hint">选择左侧站点，或点击「新建站点」<br />双击站点名可直接连接</div>}
           </div>
         </div>
-        <div className="flex gap-3 min-h-[380px]">
-          <div className="w-60 flex-none flex flex-col gap-2">
-            {renderTree()}
-          </div>
-          <div className="flex-1 min-w-0 flex flex-col">
-            <Tabs value={tab} onValueChange={setTab}>
-              <TabsList>
-                <TabsTrigger value="general">常规</TabsTrigger>
-                <TabsTrigger value="advanced">高级</TabsTrigger>
-              </TabsList>
-            </Tabs>
-            <div className="flex-1 rounded-md border bg-background p-4 mt-2 overflow-auto">
-              {edit ? (tab === 'general' ? (
-                <div className="grid grid-cols-[90px_1fr] gap-x-3 gap-y-3 items-center max-w-md">
-                  <Label>站点名称:</Label><Input value={edit.name} onChange={(e) => set('name', e.target.value)} />
-                  <Label>IP 地址:</Label><Input value={edit.host} onChange={(e) => set('host', e.target.value)} placeholder="ftp.example.com 或 192.168.1.1" />
-                  <Label>端口:</Label><Input className="w-20" value={edit.port} onChange={(e) => set('port', e.target.value.replace(/\D/g, ''))} />
-                  <Label>用户名:</Label><Input value={edit.username} onChange={(e) => set('username', e.target.value)} />
-                  <Label>密码:</Label><Input type="password" value={edit.password} onChange={(e) => set('password', e.target.value)} />
-                </div>
-              ) : (
-                <div className="grid grid-cols-[90px_1fr] gap-x-3 gap-y-3 items-center max-w-md">
-                  <Label>协议:</Label>
-                  <Select value={edit.protocol} onValueChange={(v) => set('protocol', v)}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="ftp">FTP</SelectItem>
-                      <SelectItem value="ftps_explicit">FTPS (显式 TLS)</SelectItem>
-                      <SelectItem value="ftps_implicit">FTPS (隐式 SSL)</SelectItem>
-                      <SelectItem value="sftp">SFTP (SSH)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Label>编码:</Label>
-                  <Select value={edit.encoding} onValueChange={(v) => set('encoding', v)}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="auto">自动检测</SelectItem>
-                      <SelectItem value="utf-8">UTF-8</SelectItem>
-                      <SelectItem value="gbk">GBK (简体中文)</SelectItem>
-                      <SelectItem value="big5">Big5 (繁体中文)</SelectItem>
-                      <SelectItem value="shift-jis">Shift-JIS (日文)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Label>传输模式:</Label>
-                  <Select value={edit.passiveMode ? 'passive' : 'active'} onValueChange={(v) => set('passiveMode', v === 'passive')}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="passive">被动模式 (PASV)</SelectItem>
-                      <SelectItem value="active">主动模式 (PORT)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Label>证书校验:</Label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <Checkbox checked={edit.tlsAcceptInvalid} onCheckedChange={(v) => set('tlsAcceptInvalid', !!v)} />
-                    忽略证书错误（自签名服务器）
-                  </label>
-                  <Label>代理:</Label>
-                  <Select value={String(edit.proxyId ?? '')} onValueChange={(v) => set('proxyId', v === '' ? null : Number(v))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="">（无）</SelectItem>
-                      {proxies.map(p => <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                  <Label>分组:</Label>
-                  <Select value={String(edit.groupId ?? '')} onValueChange={(v) => set('groupId', v === '' ? null : Number(v))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="">（无）</SelectItem>
-                      {groups.map(g => <SelectItem key={g.id} value={String(g.id)}>{g.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )) : (
-                <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
-                  选择左侧站点，或点击「新建站点」；<b className="ml-1">双击站点名可直接连接</b>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>关闭(X)</Button>
-          <Button variant="outline" onClick={() => save()}>应用(A)</Button>
-          <Button onClick={() => connect()} disabled={!edit || !edit.host}>连接(C)</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      </div>
+      {error && <div role="alert" className="text-destructive text-xs pt-2">{error}</div>}
+      <div className="fx-hint shrink-0" style={{ marginTop: 8 }}>
+        提示：「应用」保存站点设置；「连接」保存并立即连接。快捷键 F4 打开本窗口。
+      </div>
+    </WinDialog>
   )
 }

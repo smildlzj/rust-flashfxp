@@ -3,6 +3,10 @@ use crate::bus::Entry;
 /// 解析服务器目录列表。优先 MLSD（RFC3659 事实行），回退解析 UNIX/Windows LIST 文本格式。
 /// "." ".." 过滤，返回按名称排序的条目。
 pub fn parse_dir_listing(raw: &[u8], decode: &dyn Fn(&[u8]) -> String) -> Vec<Entry> {
+    parse_dir_listing_with_timezone(raw, decode, None)
+}
+
+pub fn parse_dir_listing_with_timezone(raw: &[u8], decode: &dyn Fn(&[u8]) -> String, offset_minutes: Option<i32>) -> Vec<Entry> {
     let text = decode(raw);
     let mut entries: Vec<Entry> = Vec::new();
     for line in text.lines() {
@@ -12,9 +16,10 @@ pub fn parse_dir_listing(raw: &[u8], decode: &dyn Fn(&[u8]) -> String) -> Vec<En
         }
         if let Some(e) = parse_mlsx(line) {
             entries.push(e);
-        } else if let Some(e) = parse_unix_list(line) {
-            entries.push(e);
-        } else if let Some(e) = parse_dos_list(line) {
+        } else if let Some(mut e) = parse_unix_list(line).or_else(|| parse_dos_list(line)) {
+            if let (Some(ts), Some(offset)) = (e.mtime, offset_minutes) {
+                e.mtime = Some(ts - i64::from(offset) * 60);
+            }
             entries.push(e);
         }
     }
@@ -332,3 +337,18 @@ mod tests {
     }
 }
 
+
+#[cfg(test)]
+mod timezone_tests {
+    use super::*;
+    #[test]
+    fn server_timezone_adjusts_legacy_list_but_not_mlsd() {
+        let raw = b"-rw-r--r-- 1 user group 10 Jan 01 2025 legacy.txt\r\ntype=file;size=10;modify=20250101000000; utc.txt\r\n";
+        let decode = |bytes: &[u8]| String::from_utf8_lossy(bytes).into_owned();
+        let baseline = parse_dir_listing(raw, &decode);
+        let adjusted = parse_dir_listing_with_timezone(raw, &decode, Some(480));
+        assert_eq!(adjusted[0].mtime, baseline[0].mtime.map(|t| t - 480 * 60));
+        assert_eq!(adjusted[1].mtime, baseline[1].mtime);
+        assert_eq!(parse_dir_listing_with_timezone(raw, &decode, None)[0].mtime, baseline[0].mtime);
+    }
+}

@@ -7,7 +7,6 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
 use crate::bus::{remote_join, Entry, TransferTask, UiCmd, UiEvent};
-use crate::session::list_parse::parse_dir_listing;
 use crate::session::make_decoder;
 use crate::session::proxy::dial_via_proxy;
 use crate::session::tls::make_connector;
@@ -41,6 +40,7 @@ pub struct FtpSession {
     decoder: Box<dyn Fn(&[u8]) -> String + Send + Sync>,
     mlsd_supported: Option<bool>,
     control_host: String,
+    timezone_offset_minutes: Option<i32>,
 }
 
 impl FtpConn {
@@ -81,12 +81,33 @@ impl FtpConn {
 
     async fn login_and_setup(&mut self, site: &Site) -> Result<(), String> {
         arm2!(self, f => {
-            f.login(
+            let account = site.account.as_deref().filter(|a| !a.trim().is_empty());
+            if account.is_some_and(|a| a.contains(['\r', '\n'])) {
+                return Err("ACCT 账号不能包含换行符".into());
+            }
+            // suppaftp::login only accepts 230/331. A consumed 332 response means
+            // continue authentication with ACCT, not retry USER/PASS.
+            let needs_account = match f.login(
                 site.username.as_deref().unwrap_or("anonymous"),
                 site.password.as_deref().unwrap_or(""),
-            )
-            .await
-            .map_err(|e| format!("登录失败: {e}"))?;
+            ).await {
+                Ok(()) => false,
+                Err(suppaftp::FtpError::UnexpectedResponse(response))
+                    if response.status == Status::LoginNeedAccount => true,
+                Err(e) => return Err(format!("登录失败: {e}")),
+            };
+            if needs_account && account.is_none() {
+                return Err("服务器要求 ACCT 账号，请在站点高级设置中填写".into());
+            }
+            if let Some(account) = account {
+                let expected = if needs_account {
+                    &[Status::LoggedIn][..]
+                } else {
+                    &[Status::LoggedIn, Status::CommandOk, Status::CommandNotImplemented][..]
+                };
+                f.custom_command(format!("ACCT {account}"), expected).await
+                    .map_err(|e| format!("ACCT 账号认证失败: {e}"))?;
+            }
             f.transfer_type(suppaftp::types::FileType::Binary)
                 .await
                 .map_err(|e| format!("设置二进制模式失败: {e}"))?;
@@ -430,6 +451,7 @@ impl FtpSession {
             decoder: make_decoder(&site.encoding),
             mlsd_supported: None,
             control_host: site.host.clone(),
+            timezone_offset_minutes: site.timezone_offset_minutes,
         })
     }
 
@@ -454,6 +476,14 @@ impl FtpSession {
     }
 
     pub async fn list(&mut self, path: &str) -> Result<Vec<Entry>, String> {
+        self.list_with_path(path).await.map(|(_, entries)| entries)
+    }
+
+    /// Change directory for both FTP/FTPS, then return the server's canonical PWD.
+    /// Listing the current directory avoids applying a relative path twice.
+    pub async fn list_with_path(&mut self, path: &str) -> Result<(String, Vec<Entry>), String> {
+        self.conn.cwd(path).await?;
+        let canonical = self.conn.pwd().await?;
         let mlsd = match self.mlsd_supported {
             Some(b) => b,
             None => {
@@ -462,18 +492,14 @@ impl FtpSession {
                 b
             }
         };
-        // 明文：先切目录再列当前目录（避免路径中的空格解析差异），原始字节通道保 GBK 文件名
         let raw: Vec<u8> = match &self.conn {
-            FtpConn::Plain(_) => {
-                self.conn.cwd(path).await?;
-                self.conn.raw_lines(&self.control_host.clone(), None, mlsd).await?
-            }
-            FtpConn::Tls(_) => {
-                let lines = self.conn.string_lines(Some(path), mlsd).await?;
-                lines.join("\n").into_bytes()
-            }
+            FtpConn::Plain(_) => self.conn.raw_lines(&self.control_host.clone(), None, mlsd).await?,
+            FtpConn::Tls(_) => self.conn.string_lines(None, mlsd).await?.join("\n").into_bytes(),
         };
-        Ok(parse_dir_listing(&raw, self.decoder.as_ref()))
+        let entries = crate::session::list_parse::parse_dir_listing_with_timezone(
+            &raw, self.decoder.as_ref(), self.timezone_offset_minutes,
+        );
+        Ok((canonical, entries))
     }
 
     pub async fn download_file(&mut self, remote: &str, local: &Path, id: u64, total: u64, base: u64, event_tx: &Sender<UiEvent>) -> Result<(), String> {
@@ -578,18 +604,19 @@ pub async fn run_backend(mut cmd_rx: UnboundedReceiver<UiCmd>, event_tx: Sender<
             }
             UiCmd::LocalMkdir { path } => {
                 let tx = event_tx.clone();
-                tokio::task::spawn_blocking(move || {
+                // 必须等文件操作真正完成，否则紧随其后的 LocalList 可能先列出旧内容
+                let _ = tokio::task::spawn_blocking(move || {
                     if let Err(e) = std::fs::create_dir_all(&path) {
                         let _ = tx.send(UiEvent::Notify {
                             level: crate::bus::Level::Error,
                             text: format!("创建目录失败: {e}"),
                         });
                     }
-                });
+                }).await;
             }
             UiCmd::LocalDelete { paths } => {
                 let tx = event_tx.clone();
-                tokio::task::spawn_blocking(move || {
+                let _ = tokio::task::spawn_blocking(move || {
                     for p in paths {
                         let r = if p.is_dir() { std::fs::remove_dir_all(&p) } else { std::fs::remove_file(&p) };
                         if let Err(e) = r {
@@ -599,18 +626,18 @@ pub async fn run_backend(mut cmd_rx: UnboundedReceiver<UiCmd>, event_tx: Sender<
                             });
                         }
                     }
-                });
+                }).await;
             }
             UiCmd::LocalRename { from, to } => {
                 let tx = event_tx.clone();
-                tokio::task::spawn_blocking(move || {
+                let _ = tokio::task::spawn_blocking(move || {
                     if let Err(e) = std::fs::rename(&from, &to) {
                         let _ = tx.send(UiEvent::Notify {
                             level: crate::bus::Level::Error,
                             text: format!("重命名失败: {e}"),
                         });
                     }
-                });
+                }).await;
             }
             UiCmd::RemoteList { path } => {
                 if let Some(stx) = &session_tx {
@@ -676,16 +703,36 @@ async fn run_session(
     };
     let _ = event_tx.send(UiEvent::Connected);
 
-    if let Ok(cwd) = session.pwd().await {
-        if let Ok(entries) = session.list(&cwd).await {
-            let _ = event_tx.send(UiEvent::RemoteList { path: cwd, entries });
+    // Capture the login directory before CWD: a failed listing can still change
+    // the server's cwd, so fallback must explicitly restore the original directory.
+    let default_path = session.pwd().await.ok();
+    let initial = site.remote_path.as_deref().map(str::trim).filter(|p| !p.is_empty());
+    let target = initial.or(default_path.as_deref());
+    if let Some(target) = target {
+        match session.list_with_path(target).await {
+            Ok((path, entries)) => {
+                let _ = event_tx.send(UiEvent::RemoteList { path, entries });
+            }
+            Err(e) => {
+                notify(&event_tx, format!("远程初始目录「{target}」不可用：{e}"));
+                if initial.is_some() {
+                    if let Some(default_path) = default_path.as_deref() {
+                        match session.list_with_path(default_path).await {
+                            Ok((path, entries)) => {
+                                let _ = event_tx.send(UiEvent::RemoteList { path, entries });
+                            }
+                            Err(e) => notify(&event_tx, format!("返回默认目录失败：{e}")),
+                        }
+                    }
+                }
+            }
         }
     }
 
     while let Some(cmd) = cmd_rx.recv().await {
         match cmd {
-            SessionCmd::List { path } => match session.list(&path).await {
-                Ok(entries) => {
+            SessionCmd::List { path } => match session.list_with_path(&path).await {
+                Ok((path, entries)) => {
                     let _ = event_tx.send(UiEvent::RemoteList { path, entries });
                 }
                 Err(e) => notify(&event_tx, e),
@@ -932,6 +979,12 @@ mod tests {
             login_cmds: None,
             proxy_id: None,
             tls_accept_invalid: false,
+            local_path: None,
+            remote_path: None,
+            account: None,
+            notes: String::new(),
+            login_type: "normal".into(),
+            timezone_offset_minutes: None,
         }
     }
 
@@ -1208,3 +1261,7 @@ mod tests {
         drop(cmd_tx);
     }
 }
+
+#[cfg(test)]
+#[path = "ftp_regression_tests.rs"]
+mod regression_tests;

@@ -1,12 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { api } from '../api.js'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Plus, Pencil, Trash2 } from 'lucide-react'
+import { Ico } from '../winicons.jsx'
+import { WinButton, WinInput, WinCombo, WinFieldset, WinDialog } from '../win32.jsx'
 
 export default function ProxyManager({ open, onOpenChange }) {
   const [proxies, setProxies] = useState([])
@@ -16,6 +11,9 @@ export default function ProxyManager({ open, onOpenChange }) {
   useEffect(() => { if (open) reload() }, [open])
 
   const set = (k, v) => setEdit(e => ({ ...e, [k]: v }))
+  const close = () => onOpenChange(false)
+
+  const blank = () => ({ id: 0, name: '', kind: 'socks5', host: '', port: 1080, username: '', password: '' })
 
   const save = async () => {
     if (!edit || !edit.name.trim() || !edit.host.trim()) return
@@ -30,52 +28,61 @@ export default function ProxyManager({ open, onOpenChange }) {
   const remove = async (p) => {
     if (!window.confirm(`删除代理「${p.name}」？`)) return
     await api.deleteProxy(p.id)
+    if (edit && edit.id === p.id) setEdit(null)
     await reload()
   }
 
+  const footer = (
+    <>
+      <WinButton className="left" onClick={() => setEdit(blank())}>新增(N)</WinButton>
+      {edit && <WinButton onClick={save}>保存(S)</WinButton>}
+      {edit && <WinButton variant="outline" onClick={() => setEdit(null)}>取消</WinButton>}
+      <WinButton variant="outline" onClick={close}>关闭(X)</WinButton>
+    </>
+  )
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader><DialogTitle>代理设置</DialogTitle></DialogHeader>
-        <ScrollArea className="h-40 rounded-md border p-1">
-          {!proxies.length && <div className="p-3 text-sm text-muted-foreground text-center">（暂无代理）</div>}
+    <WinDialog open={open} title="代理设置" width={520} onClose={close} footer={footer}>
+      <WinFieldset legend="代理服务器列表">
+        <div className="fx-panel" style={{ height: 132 }}>
+          {!proxies.length && <div className="fx-hint" style={{ padding: 8 }}>（暂无代理）</div>}
           {proxies.map(p => (
-            <div key={p.id} className="flex items-center gap-2 px-2 py-1.5 rounded-sm hover:bg-accent text-sm">
+            <div key={p.id} className={`fx-listbox-row ${edit && edit.id === p.id ? 'fx-selected' : ''}`}
+                 onClick={() => setEdit({ ...p })}>
+              <Ico name="network" size={14} />
               <b>{p.name}</b>
-              <span className="text-muted-foreground">{p.kind === 'socks5' ? 'SOCKS5' : 'HTTP'} {p.host}:{p.port}</span>
-              <span className="flex-1" />
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEdit({ ...p })}><Pencil className="h-3.5 w-3.5" /></Button>
-              <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600" onClick={() => remove(p)}><Trash2 className="h-3.5 w-3.5" /></Button>
+              <span className="fx-muted" style={{ marginLeft: 10 }}>
+                {p.kind === 'socks5' ? 'SOCKS5' : 'HTTP'}　{p.host}:{p.port}
+              </span>
+              <span style={{ flex: 1 }} />
+              <button className="fx-dialog-x" title="编辑" onClick={(e) => { e.stopPropagation(); setEdit({ ...p }) }}>✎</button>
+              <button className="fx-dialog-x" title="删除" onClick={(e) => { e.stopPropagation(); remove(p) }}>✕</button>
             </div>
           ))}
-        </ScrollArea>
-        {edit && (
-          <div className="grid grid-cols-[80px_1fr] gap-x-3 gap-y-2.5 items-center mt-2">
-            <Label>名称:</Label><Input value={edit.name} onChange={(e) => set('name', e.target.value)} />
-            <Label>类型:</Label>
-            <Select value={edit.kind} onValueChange={(v) => set('kind', v)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="socks5">SOCKS5</SelectItem>
-                <SelectItem value="http">HTTP (CONNECT)</SelectItem>
-              </SelectContent>
-            </Select>
-            <Label>主机:</Label><Input value={edit.host} onChange={(e) => set('host', e.target.value)} />
-            <Label>端口:</Label><Input className="w-24" value={edit.port} onChange={(e) => set('port', e.target.value.replace(/\D/g, ''))} />
-            <Label>用户名:</Label><Input value={edit.username} onChange={(e) => set('username', e.target.value)} />
-            <Label>密码:</Label><Input type="password" value={edit.password} onChange={(e) => set('password', e.target.value)} />
+        </div>
+      </WinFieldset>
+      {edit ? (
+        <WinFieldset legend="代理设置">
+          <div className="fx-form-grid">
+            <label>名称:</label>
+            <WinInput value={edit.name} onChange={(e) => set('name', e.target.value)} />
+            <label>类型:</label>
+            <WinCombo value={edit.kind} onChange={(v) => set('kind', v)}
+                      options={[{ value: 'socks5', label: 'SOCKS5' }, { value: 'http', label: 'HTTP (CONNECT)' }]} />
+            <label>主机地址:</label>
+            <WinInput value={edit.host} onChange={(e) => set('host', e.target.value)} />
+            <label>端口:</label>
+            <div><WinInput className="w-short" value={edit.port}
+                           onChange={(e) => set('port', e.target.value.replace(/\D/g, ''))} /></div>
+            <label>用户名:</label>
+            <WinInput value={edit.username || ''} onChange={(e) => set('username', e.target.value)} />
+            <label>密码:</label>
+            <WinInput type="password" value={edit.password || ''} onChange={(e) => set('password', e.target.value)} />
           </div>
-        )}
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setEdit({ id: 0, name: '', kind: 'socks5', host: '', port: 1080, username: '', password: '' })}>
-            <Plus className="mr-1 h-4 w-4" />新增
-          </Button>
-          <span className="flex-1" />
-          {edit && <Button variant="outline" onClick={save}>保存</Button>}
-          {edit && <Button variant="outline" onClick={() => setEdit(null)}>取消</Button>}
-          <Button variant="outline" onClick={() => onOpenChange(false)}>关闭(X)</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </WinFieldset>
+      ) : (
+        <div className="fx-hint">选择上方代理进行编辑，或点击「新增」创建新的代理服务器配置。</div>
+      )}
+    </WinDialog>
   )
 }

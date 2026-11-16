@@ -43,6 +43,9 @@ fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
             proxy_id INTEGER REFERENCES proxies(id) ON DELETE SET NULL,
             login_cmds TEXT,
             tls_accept_invalid INTEGER NOT NULL DEFAULT 0,
+            local_path TEXT,
+            remote_path TEXT,
+            account TEXT,
             created_at INTEGER NOT NULL
         );
         CREATE TABLE IF NOT EXISTS proxies (
@@ -70,7 +73,24 @@ fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
             value TEXT NOT NULL
         );
         ",
-    )
+    )?;
+    // 迁移旧库：早期版本的 sites 表没有这些列，已存在则忽略 ALTER 报错
+    let _ = conn.execute("ALTER TABLE sites ADD COLUMN local_path TEXT", []);
+    let _ = conn.execute("ALTER TABLE sites ADD COLUMN remote_path TEXT", []);
+    let _ = conn.execute("ALTER TABLE sites ADD COLUMN account TEXT", []);
+    for (column, definition) in [
+        ("notes", "TEXT NOT NULL DEFAULT ''"),
+        ("login_type", "TEXT NOT NULL DEFAULT 'normal'"),
+        ("timezone_offset_minutes", "INTEGER"),
+    ] {
+        let mut stmt = conn.prepare("PRAGMA table_info(sites)")?;
+        let names = stmt.query_map([], |r| r.get::<_, String>(1))?
+            .collect::<Result<Vec<_>, _>>()?;
+        if !names.iter().any(|name| name == column) {
+            conn.execute(&format!("ALTER TABLE sites ADD COLUMN {column} {definition}"), [])?;
+        }
+    }
+    Ok(())
 }
 
 pub struct SiteRepo {
@@ -94,7 +114,25 @@ pub struct Site {
     pub login_cmds: Option<String>,
     pub proxy_id: Option<i64>,
     pub tls_accept_invalid: bool,
+    /// 连接后本地面板初始进入的目录（空则沿用上次目录）
+    #[serde(default)]
+    pub local_path: Option<String>,
+    /// 连接后远程面板初始进入的目录（空则服务器默认目录）
+    #[serde(default)]
+    pub remote_path: Option<String>,
+    /// 可选的 FTP ACCOUNT 账号
+    #[serde(default)]
+    pub account: Option<String>,
+    #[serde(default)]
+    pub notes: String,
+    #[serde(default = "normal_login")]
+    pub login_type: String,
+    /// 服务器 LIST 时间相对 UTC 的分钟偏移；None 为自动。
+    #[serde(default)]
+    pub timezone_offset_minutes: Option<i32>,
 }
+
+fn normal_login() -> String { "normal".into() }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -142,7 +180,7 @@ impl SiteRepo {
 
     pub fn list_sites(&self) -> anyhow::Result<Vec<Site>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, group_id, name, host, port, protocol, username, password_enc, encoding, passive_mode, login_cmds, proxy_id, tls_accept_invalid FROM sites ORDER BY name",
+            "SELECT id, group_id, name, host, port, protocol, username, password_enc, encoding, passive_mode, login_cmds, proxy_id, tls_accept_invalid, local_path, remote_path, account, notes, login_type, timezone_offset_minutes FROM sites ORDER BY name",
         )?;
         let rows = stmt
             .query_map([], |r| {
@@ -162,6 +200,12 @@ impl SiteRepo {
                     login_cmds: r.get(10)?,
                     proxy_id: r.get(11)?,
                     tls_accept_invalid: r.get::<_, i64>(12)? == 1,
+                    local_path: r.get(13)?,
+                    remote_path: r.get(14)?,
+                    account: r.get(15)?,
+                    notes: r.get(16)?,
+                    login_type: r.get(17)?,
+                    timezone_offset_minutes: r.get(18)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -172,13 +216,13 @@ impl SiteRepo {
         let enc: Option<Vec<u8>> = site
             .password
             .as_deref()
-            .filter(|p| !p.is_empty())
+            .filter(|p| site.login_type != "prompt" && !p.is_empty())
             .map(|p| self.cipher.encrypt(p))
             .transpose()?;
         if site.id == 0 {
             self.conn.execute(
-                "INSERT INTO sites (group_id, name, host, port, protocol, username, password_enc, encoding, passive_mode, login_cmds, proxy_id, tls_accept_invalid, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                "INSERT INTO sites (group_id, name, host, port, protocol, username, password_enc, encoding, passive_mode, login_cmds, proxy_id, tls_accept_invalid, local_path, remote_path, account, notes, login_type, timezone_offset_minutes, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
                 rusqlite::params![
                     site.group_id,
                     site.name,
@@ -192,13 +236,19 @@ impl SiteRepo {
                     site.login_cmds,
                     site.proxy_id,
                     site.tls_accept_invalid as i64,
+                    site.local_path,
+                    site.remote_path,
+                    site.account,
+                    site.notes,
+                    site.login_type,
+                    site.timezone_offset_minutes,
                     chrono::Utc::now().timestamp(),
                 ],
             )?;
             Ok(self.conn.last_insert_rowid())
         } else {
             self.conn.execute(
-                "UPDATE sites SET group_id=?1, name=?2, host=?3, port=?4, protocol=?5, username=?6, password_enc=?7, encoding=?8, passive_mode=?9, login_cmds=?10, proxy_id=?11, tls_accept_invalid=?12 WHERE id=?13",
+                "UPDATE sites SET group_id=?1, name=?2, host=?3, port=?4, protocol=?5, username=?6, password_enc=?7, encoding=?8, passive_mode=?9, login_cmds=?10, proxy_id=?11, tls_accept_invalid=?12, local_path=?13, remote_path=?14, account=?15, notes=?16, login_type=?17, timezone_offset_minutes=?18 WHERE id=?19",
                 rusqlite::params![
                     site.group_id,
                     site.name,
@@ -212,6 +262,12 @@ impl SiteRepo {
                     site.login_cmds,
                     site.proxy_id,
                     site.tls_accept_invalid as i64,
+                    site.local_path,
+                    site.remote_path,
+                    site.account,
+                    site.notes,
+                    site.login_type,
+                    site.timezone_offset_minutes,
                     site.id,
                 ],
             )?;
@@ -357,9 +413,56 @@ impl SiteRepo {
 mod tests {
     use super::*;
 
+    fn memory_repo() -> SiteRepo {
+        let conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+        SiteRepo { conn, cipher: Cipher::new() }
+    }
+
+    #[test]
+    fn general_fields_roundtrip_and_update() {
+        let repo = memory_repo();
+        let mut site: Site = serde_json::from_value(serde_json::json!({
+            "id": 0, "groupId": null, "name": "站点", "host": "localhost",
+            "port": 22, "protocol": "sftp", "encoding": "auto",
+            "passiveMode": true, "tlsAcceptInvalid": false,
+            "password": "must-not-persist", "loginType": "prompt", "notes": "仅本地备注\n第二行",
+            "timezoneOffsetMinutes": 480, "localPath": "/tmp/本地", "remotePath": "/remote"
+        })).unwrap();
+        site.id = repo.upsert_site(&site).unwrap();
+        let loaded = repo.list_sites().unwrap().remove(0);
+        assert_eq!(loaded.notes, "仅本地备注\n第二行");
+        assert_eq!(loaded.login_type, "prompt");
+        assert_eq!(loaded.password, None);
+        assert_eq!(loaded.timezone_offset_minutes, Some(480));
+        assert_eq!(loaded.local_path.as_deref(), Some("/tmp/本地"));
+        site.notes = "更新".into();
+        site.timezone_offset_minutes = None;
+        repo.upsert_site(&site).unwrap();
+        let sites = repo.list_sites().unwrap();
+        assert_eq!(sites.len(), 1);
+        assert_eq!(sites[0].notes, "更新");
+        assert_eq!(sites[0].timezone_offset_minutes, None);
+    }
+
+    #[test]
+    fn old_schema_migration_is_repeatable() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE sites (id INTEGER PRIMARY KEY, group_id INTEGER, name TEXT, host TEXT, port INTEGER, protocol TEXT, username TEXT, password_enc BLOB, encoding TEXT, passive_mode INTEGER, login_cmds TEXT, proxy_id INTEGER, tls_accept_invalid INTEGER, created_at INTEGER);
+            INSERT INTO sites VALUES (1,NULL,'旧站点','localhost',21,'ftp','anonymous',NULL,'auto',1,NULL,NULL,0,0);").unwrap();
+        init_schema(&conn).unwrap();
+        init_schema(&conn).unwrap();
+        let repo = SiteRepo { conn, cipher: Cipher::new() };
+        let loaded = repo.list_sites().unwrap().remove(0);
+        assert_eq!(loaded.name, "旧站点");
+        assert_eq!(loaded.notes, "");
+        assert_eq!(loaded.timezone_offset_minutes, None);
+        assert_eq!(loaded.login_type, "normal");
+    }
+
     #[test]
     fn site_crud_roundtrip() {
-        let repo = SiteRepo::open().unwrap();
+        let repo = memory_repo();
         let site = Site {
             id: 0,
             group_id: None,
@@ -374,6 +477,10 @@ mod tests {
             login_cmds: None,
             proxy_id: None,
             tls_accept_invalid: false,
+            local_path: Some("/tmp/local".into()),
+            remote_path: Some("/public_html".into()),
+            account: Some("acct".into()),
+            notes: String::new(), login_type: normal_login(), timezone_offset_minutes: None,
         };
         let id = repo.upsert_site(&site).unwrap();
         assert!(id > 0);
@@ -381,6 +488,9 @@ mod tests {
         let loaded = repo.list_sites().unwrap().into_iter().find(|s| s.id == id).unwrap();
         assert_eq!(loaded.password.as_deref(), Some("中文密码"));
         assert_eq!(loaded.name, "测试站点");
+        assert_eq!(loaded.local_path.as_deref(), Some("/tmp/local"));
+        assert_eq!(loaded.remote_path.as_deref(), Some("/public_html"));
+        assert_eq!(loaded.account.as_deref(), Some("acct"));
 
         repo.delete_site(id).unwrap();
         assert!(repo.list_sites().unwrap().into_iter().all(|s| s.id != id));
@@ -388,7 +498,7 @@ mod tests {
 
     #[test]
     fn config_roundtrip() {
-        let repo = SiteRepo::open().unwrap();
+        let repo = memory_repo();
         repo.set_config("test_key", "值").unwrap();
         assert_eq!(repo.get_config("test_key").unwrap().as_deref(), Some("值"));
         repo.set_config("test_key", "新值").unwrap();

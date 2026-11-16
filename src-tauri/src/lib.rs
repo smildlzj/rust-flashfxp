@@ -8,6 +8,41 @@ use flashfxp_lib::store::{Proxy, Site, SiteRepo};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 
+// ---------------- 窗口状态持久化 ----------------
+
+#[derive(Clone, Copy, serde::Serialize, serde::Deserialize, Default)]
+struct WinRect {
+    x: i32,
+    y: i32,
+    w: u32,
+    h: u32,
+}
+
+fn win_state_path(app: &AppHandle) -> Option<std::path::PathBuf> {
+    use tauri::Manager;
+    app.path().app_data_dir().ok().map(|d| d.join("window_state.json"))
+}
+
+fn save_win_state(app: &AppHandle, r: WinRect) {
+    if let Some(p) = win_state_path(app) {
+        let _ = std::fs::create_dir_all(p.parent().unwrap());
+        let _ = std::fs::write(&p, serde_json::to_string(&r).unwrap_or_default());
+    }
+}
+
+fn restore_win_state(app: &AppHandle) {
+    use tauri::Manager;
+    let Some(win) = app.get_webview_window("main") else { return };
+    let Some(p) = win_state_path(app) else { return };
+    let Ok(text) = std::fs::read_to_string(&p) else { return };
+    let Ok(r) = serde_json::from_str::<WinRect>(&text) else { return };
+    if r.w < 400 || r.h < 300 {
+        return;
+    }
+    let _ = win.set_size(tauri::PhysicalSize::new(r.w, r.h));
+    let _ = win.set_position(tauri::PhysicalPosition::new(r.x, r.y));
+}
+
 static CMD_TX: OnceLock<UnboundedSender<UiCmd>> = OnceLock::new();
 static LAST_SITE: OnceLock<(Site, Option<Proxy>)> = OnceLock::new();
 static CANCELLED: OnceLock<std::sync::Mutex<std::collections::HashSet<u64>>> = OnceLock::new();
@@ -53,6 +88,51 @@ fn send_cmd(cmd: UiCmd) -> Result<(), String> {
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
+            restore_win_state(app.handle());
+
+            // 窗口移动/缩放 → 防抖落盘（dev 重启为强杀进程，不能依赖退出钩子）
+            {
+                use std::sync::mpsc as sync_mpsc;
+                use tauri::Manager;
+                let (tx, rx) = sync_mpsc::channel::<WinRect>();
+                static RECT: OnceLock<std::sync::Mutex<WinRect>> = OnceLock::new();
+                let rect_store = RECT.get_or_init(|| std::sync::Mutex::new(WinRect::default()));
+                let win = app.get_webview_window("main").expect("主窗口缺失");
+                let init = {
+                    let pos = win.outer_position().unwrap_or_default();
+                    let size = win.outer_size().unwrap_or_default();
+                    WinRect { x: pos.x, y: pos.y, w: size.width, h: size.height }
+                };
+                *rect_store.lock().unwrap() = init;
+                let store_clone = rect_store;
+                let _ = win.on_window_event(move |e| {
+                    if let Ok(mut r) = store_clone.lock() {
+                        match e {
+                            tauri::WindowEvent::Moved(p) => { r.x = p.x; r.y = p.y; }
+                            tauri::WindowEvent::Resized(s) => { r.w = s.width; r.h = s.height; }
+                            _ => return,
+                        }
+                        let _ = tx.send(*r);
+                    }
+                });
+                let handle = app.handle().clone();
+                std::thread::Builder::new()
+                    .name("win-state".into())
+                    .spawn(move || {
+                        while let Ok(mut r) = rx.recv() {
+                            // 防抖：静默 500ms 后取最新值写盘
+                            loop {
+                                match rx.recv_timeout(std::time::Duration::from_millis(500)) {
+                                    Ok(newer) => r = newer,
+                                    Err(_) => break,
+                                }
+                            }
+                            save_win_state(&handle, r);
+                        }
+                    })
+                    .expect("窗口状态线程启动失败");
+            }
+
             let (cmd_tx, cmd_rx) = unbounded_channel::<UiCmd>();
             let (event_tx, event_rx) = std_mpsc::channel::<UiEvent>();
             CMD_TX.set(cmd_tx).expect("重复初始化");
@@ -122,9 +202,11 @@ pub fn run() {
             proxy_delete,
             queue_clear_finished,
             home_dir,
+            pick_folder,
             disk_info,
             tree_list,
-            transfer_cancel
+            transfer_cancel,
+            app_exit
         ])
         .run(tauri::generate_context!())
         .expect("Tauri 启动失败");
@@ -148,20 +230,29 @@ fn quick_connect(host: String, port: u16, user: String, pass: String) -> Result<
         login_cmds: None,
         proxy_id: None,
         tls_accept_invalid: false,
+        local_path: None,
+        remote_path: None,
+        account: None,
+        notes: String::new(),
+        login_type: "normal".into(),
+        timezone_offset_minutes: None,
     };
     let _ = LAST_SITE.set((site.clone(), None));
     send_cmd(UiCmd::Connect { site, proxy: None })
 }
 
 #[tauri::command]
-fn connect_site(site_id: i64) -> Result<(), String> {
+fn connect_site(site_id: i64, username_override: Option<String>, password_override: Option<String>) -> Result<(), String> {
     let repo = SiteRepo::open().map_err(|e| e.to_string())?;
-    let site = repo
+    let mut site = repo
         .list_sites()
         .map_err(|e| e.to_string())?
         .into_iter()
         .find(|s| s.id == site_id)
         .ok_or_else(|| "站点不存在".to_string())?;
+    // 临时覆盖仅用于当前会话和队列 worker，绝不 upsert。
+    if let Some(username) = username_override { site.username = Some(username); }
+    if let Some(password) = password_override { site.password = Some(password); }
     let proxy = site
         .proxy_id
         .and_then(|pid| repo.list_proxies().ok().and_then(|ps| ps.into_iter().find(|p| p.id == pid)));
@@ -438,4 +529,18 @@ fn home_dir() -> String {
     std::env::home_dir()
         .map(|p| p.display().to_string())
         .unwrap_or_else(|| "/".into())
+}
+
+/// 系统目录选择对话框：供站点「本地路径」浏览按钮使用。返回 None 表示用户取消。
+#[tauri::command]
+fn pick_folder() -> Option<String> {
+    rfd::FileDialog::new()
+        .pick_folder()
+        .map(|p| p.to_string_lossy().into_owned())
+}
+
+/// 菜单「会话 > 退出(X)」：与 macOS 原生关闭按钮等价，正常结束应用进程
+#[tauri::command]
+fn app_exit() {
+    std::process::exit(0);
 }

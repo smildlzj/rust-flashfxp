@@ -5,3 +5,6 @@ dist/
 *.log
 ui/dist/
 src-tauri/gen/
+.codegraph/
+docs/plans/
+.workbuddy/

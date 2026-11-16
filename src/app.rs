@@ -256,6 +256,12 @@ impl App {
                     login_cmds: None,
                     proxy_id: None,
                     tls_accept_invalid: false,
+                    local_path: None,
+                    remote_path: None,
+                    account: None,
+                    notes: String::new(),
+                    login_type: "normal".into(),
+                    timezone_offset_minutes: None,
                 };
                 app.send(UiCmd::Connect { site, proxy: None });
             }
