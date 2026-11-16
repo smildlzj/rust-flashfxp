@@ -1,0 +1,133 @@
+name: Build desktop installers
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS-Apple-Silicon
+            os: macos-15
+            target: aarch64-apple-darwin
+            bundle: dmg
+            installer: dmg/*.dmg
+          - name: macOS-Intel
+            os: macos-15-intel
+            target: x86_64-apple-darwin
+            bundle: dmg
+            installer: dmg/*.dmg
+          - name: Windows-x64
+            os: windows-2022
+            target: x86_64-pc-windows-msvc
+            bundle: nsis
+            installer: nsis/*.exe
+    defaults:
+      run:
+        shell: bash
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/src-tauri/target
+      CARGO_TERM_COLOR: always
+      NODE_OPTIONS: ''
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          key: ${{ matrix.target }}
+
+      - name: Install frontend dependencies
+        run: npm --prefix ui ci
+
+      - name: Check release version
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const config = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
+          if (process.env.RELEASE_TAG !== `v${config.version}`) {
+            throw new Error(`Tag ${process.env.RELEASE_TAG} must match app version v${config.version}`);
+          }
+          NODE
+
+      - name: Build installer
+        working-directory: src-tauri
+        run: npx --no-install --prefix ../ui tauri build --ci --target '${{ matrix.target }}' --bundles '${{ matrix.bundle }}' -- --locked
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Rust-Flash-Ftp-${{ matrix.name }}
+          path: src-tauri/target/${{ matrix.target }}/release/bundle/${{ matrix.installer }}
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+  release:
+    name: Publish release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: Rust-Flash-Ftp-*
+          path: installers
+          merge-multiple: true
+
+      - name: Create release and upload installers
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          installers=(installers/*.dmg installers/*.exe)
+          if [ "${#installers[@]}" -ne 3 ]; then
+            echo 'Expected two macOS DMGs and one Windows x64 installer.' >&2
+            exit 1
+          fi
+          (cd installers && sha256sum *.dmg *.exe > SHA256SUMS.txt)
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            options=(--draft)
+            if [[ "$RELEASE_TAG" == *-* ]]; then
+              options+=(--prerelease)
+            fi
+            gh release create "$RELEASE_TAG" --verify-tag --title "Rust Flash Ftp $RELEASE_TAG" --generate-notes "${options[@]}"
+          fi
+          gh release upload "$RELEASE_TAG" "${installers[@]}" installers/SHA256SUMS.txt --clobber
+          gh release edit "$RELEASE_TAG" --draft=false

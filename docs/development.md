@@ -19,6 +19,44 @@ npm --prefix ui run build     # 仅前端（vite build）
 npx --prefix ui tauri build   # 正式打包桌面应用
 ```
 
+## GitHub Actions 自动打包
+
+工作流：`.github/workflows/build-desktop.yml`。
+
+| 平台 | 架构 | 安装包 |
+| --- | --- | --- |
+| macOS | Apple Silicon（M 系列，aarch64） | `.dmg` |
+| macOS | Intel（x86_64） | `.dmg` |
+| Windows | x64（MSVC） | NSIS 安装程序 `.exe` |
+
+### 手动打包
+
+将代码推送到 GitHub 默认分支后，进入 **Actions → Build desktop installers → Run workflow**，选择分支运行。
+完成后在该次运行的 **Artifacts** 下载对应平台安装包，保留 14 天。普通分支推送不会触发打包。
+在分支上手动运行只生成 Artifacts；选择已有 `v*` 标签运行也会执行发布步骤。
+
+### 发布版本
+
+1. 更新 `src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml`、根 `Cargo.toml` 和 `ui/package.json` 的版本，并更新对应 lock 文件，提交并推送。
+2. 创建与 `tauri.conf.json` 版本完全一致的 `v` 前缀标签，例如当前版本为 `0.1.0`：
+
+   ```bash
+   git tag v0.1.0
+   git push origin v0.1.0
+   ```
+
+3. 三个平台构建全部成功后，工作流创建 GitHub Release，上传两个 DMG、一个 EXE 和 `SHA256SUMS.txt`。
+   上传先在草稿中完成，再自动发布；`v0.2.0-beta.1` 等包含连字符的版本标为预发布。
+   失败后可重新运行失败的任务；发布步骤支持覆盖同名附件。
+
+校验安装包：将下载的三个安装包与 `SHA256SUMS.txt` 放在同一目录，在 macOS 使用 `shasum -a 256 -c SHA256SUMS.txt`，Linux 使用 `sha256sum -c SHA256SUMS.txt`。
+
+工作流使用仓库自带的 `GITHUB_TOKEN`，发布任务单独申请 `contents: write`，无需额外配置发布 Token。
+如果仓库或组织策略禁止写入，需要管理员允许该工作流创建 Release。
+
+macOS 包使用 ad-hoc 签名（`src-tauri/tauri.macos.conf.json`），无需 Apple 证书，但尚未经过 Apple 公证；首次运行可能需要在「系统设置 → 隐私与安全性」允许打开。
+Windows 安装包没有商业代码签名，可能显示 SmartScreen 提示。以后若需要可信签名与公证，可再接入相应证书和 Secrets。
+
 ## 本地开发
 
 ```bash
