@@ -39,8 +39,21 @@ fn restore_win_state(app: &AppHandle) {
     if r.w < 400 || r.h < 300 {
         return;
     }
-    let _ = win.set_size(tauri::PhysicalSize::new(r.w, r.h));
-    let _ = win.set_position(tauri::PhysicalPosition::new(r.x, r.y));
+    // 逻辑像素存取：避免 Retina(2x)/外接屏(1x) 混用时窗口大小减半
+    let _ = win.set_size(tauri::LogicalSize::new(r.w as f64, r.h as f64));
+    // 位置可能来自已拔掉的外接屏：超出当前屏幕范围则放弃恢复（保持默认位置）
+    let f = win.scale_factor().unwrap_or(1.0);
+    let on_screen = win.current_monitor().ok().flatten().map(|m| {
+        let ms: tauri::LogicalSize<f64> = m.size().to_logical(f);
+        let mp: tauri::LogicalPosition<f64> = m.position().to_logical(f);
+        r.x >= mp.x as i32
+            && r.y >= mp.y as i32
+            && (r.x as f64) < mp.x + ms.width - 200.0
+            && (r.y as f64) < mp.y + ms.height - 100.0
+    });
+    if on_screen.unwrap_or(true) {
+        let _ = win.set_position(tauri::LogicalPosition::new(r.x as f64, r.y as f64));
+    }
 }
 
 static CMD_TX: OnceLock<UnboundedSender<UiCmd>> = OnceLock::new();
@@ -99,17 +112,32 @@ pub fn run() {
                 let rect_store = RECT.get_or_init(|| std::sync::Mutex::new(WinRect::default()));
                 let win = app.get_webview_window("main").expect("主窗口缺失");
                 let init = {
-                    let pos = win.outer_position().unwrap_or_default();
-                    let size = win.outer_size().unwrap_or_default();
+                    let f = win.scale_factor().unwrap_or(1.0);
+                    let pos: tauri::LogicalPosition<i32> = win.outer_position().unwrap_or_default().to_logical(f);
+                    let size: tauri::LogicalSize<u32> = win.outer_size().unwrap_or_default().to_logical(f);
                     WinRect { x: pos.x, y: pos.y, w: size.width, h: size.height }
                 };
                 *rect_store.lock().unwrap() = init;
                 let store_clone = rect_store;
+                let win_close = win.clone();
                 let _ = win.on_window_event(move |e| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = e {
+                        // 关窗驻留托盘：仅隐藏窗口；退出走托盘菜单或应用内退出
+                        api.prevent_close();
+                        let _ = win_close.hide();
+                        return;
+                    }
                     if let Ok(mut r) = store_clone.lock() {
+                        let f = win_close.scale_factor().unwrap_or(1.0);
                         match e {
-                            tauri::WindowEvent::Moved(p) => { r.x = p.x; r.y = p.y; }
-                            tauri::WindowEvent::Resized(s) => { r.w = s.width; r.h = s.height; }
+                            tauri::WindowEvent::Moved(p) => {
+                                let l: tauri::LogicalPosition<i32> = p.to_logical(f);
+                                r.x = l.x; r.y = l.y;
+                            }
+                            tauri::WindowEvent::Resized(s) => {
+                                let l: tauri::LogicalSize<u32> = s.to_logical(f);
+                                r.w = l.width; r.h = l.height;
+                            }
                             _ => return,
                         }
                         let _ = tx.send(*r);
@@ -131,6 +159,60 @@ pub fn run() {
                         }
                     })
                     .expect("窗口状态线程启动失败");
+            }
+
+            // 托盘：菜单栏常驻图标，关窗驻留，左键切换窗口显隐
+            {
+                use tauri::menu::{Menu, MenuItem};
+                use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+                use tauri::Manager;
+
+                let show = MenuItem::with_id(app, "tray-show", "显示主窗口", true, None::<&str>)?;
+                let hide = MenuItem::with_id(app, "tray-hide", "隐藏主窗口", true, None::<&str>)?;
+                let quit = MenuItem::with_id(app, "tray-quit", "退出 Rust Flash Ftp", true, None::<&str>)?;
+                let menu = Menu::with_items(app, &[&show, &hide, &quit])?;
+
+                let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray_template.png"))?;
+                TrayIconBuilder::with_id("main-tray")
+                    .icon(icon)
+                    .icon_as_template(true)
+                    .tooltip("Rust Flash Ftp")
+                    .menu(&menu)
+                    .show_menu_on_left_click(false)
+                    .on_menu_event(|app, event| match event.id().as_ref() {
+                        "tray-show" => {
+                            if let Some(w) = app.get_webview_window("main") {
+                                let _ = w.show();
+                                let _ = w.set_focus();
+                            }
+                        }
+                        "tray-hide" => {
+                            if let Some(w) = app.get_webview_window("main") {
+                                let _ = w.hide();
+                            }
+                        }
+                        "tray-quit" => app.exit(0),
+                        _ => {}
+                    })
+                    .on_tray_icon_event(|tray, event| {
+                        if let TrayIconEvent::Click {
+                            button: MouseButton::Left,
+                            button_state: MouseButtonState::Up,
+                            ..
+                        } = event
+                        {
+                            let app = tray.app_handle();
+                            if let Some(w) = app.get_webview_window("main") {
+                                if w.is_visible().unwrap_or(false) {
+                                    let _ = w.hide();
+                                } else {
+                                    let _ = w.show();
+                                    let _ = w.set_focus();
+                                }
+                            }
+                        }
+                    })
+                    .build(app)?;
             }
 
             let (cmd_tx, cmd_rx) = unbounded_channel::<UiCmd>();
