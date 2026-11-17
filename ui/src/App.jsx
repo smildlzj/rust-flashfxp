@@ -179,6 +179,14 @@ export default function App() {
   const actionsRef = useRef({})
   const bootLogged = useRef(false) // StrictMode 下避免启动日志重复
   const ctxMenu = useWinContextMenu()
+  const [appVersion, setAppVersion] = useState('…')
+  useEffect(() => {
+    if (!aboutOpen) return
+    let cancelled = false
+    api.appVersion().then(version => { if (!cancelled) setAppVersion(version) })
+      .catch(() => { if (!cancelled) setAppVersion('—') })
+    return () => { cancelled = true }
+  }, [aboutOpen])
 
   const addLog = (text, level = 'info') => {
     const now = new Date()
@@ -1153,7 +1161,7 @@ export default function App() {
           <AppLogo size={48} />
           <div>
             <h2>Rust Flash Ftp</h2>
-            <p>{t("version_0_1_rust_edition")}<br />{t("ftp_ftps_sftp_client")}<br />Rust (Tauri 2) + React</p>
+            <p>{t("version_value_rust_edition", [appVersion])}<br />{t("ftp_ftps_sftp_client")}<br />Rust (Tauri 2) + React</p>
           </div>
         </div>
         <WinFieldset legend={t("features")}>

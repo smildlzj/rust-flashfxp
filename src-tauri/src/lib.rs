@@ -204,6 +204,7 @@ pub fn run() {
             new_session,
             set_language,
             set_window_title,
+            app_version,
             quick_connect,
             connect_site,
             disconnect,
@@ -618,4 +619,9 @@ fn set_language(app: AppHandle, language: String) -> Result<(), String> {
 #[tauri::command]
 fn set_window_title(window: WebviewWindow, title: String) -> Result<(), String> {
     window.set_title(&title).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn app_version(app: AppHandle) -> String {
+    app.package_info().version.to_string()
 }

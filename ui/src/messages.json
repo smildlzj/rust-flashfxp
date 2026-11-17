@@ -527,9 +527,9 @@
     "zh": "确定",
     "en": "OK"
   },
-  "version_0_1_rust_edition": {
-    "zh": "版本 0.1 (Rust 复刻版)",
-    "en": "Version 0.1 (Rust edition)"
+  "version_value_rust_edition": {
+    "zh": "版本 {0} (Rust 复刻版)",
+    "en": "Version {0} (Rust edition)"
   },
   "ftp_ftps_sftp_client": {
     "zh": "FTP / FTPS / SFTP 客户端",

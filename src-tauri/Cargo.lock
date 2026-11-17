@@ -5443,7 +5443,7 @@ dependencies = [
 
 [[package]]
 name = "rust-flashfxp"
-version = "0.1.1"
+version = "0.1.12"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -5472,7 +5472,7 @@ dependencies = [
 
 [[package]]
 name = "rust-flashfxp-tauri"
-version = "0.1.1"
+version = "0.1.12"
 dependencies = [
  "chrono",
  "fs2",

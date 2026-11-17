@@ -30,6 +30,7 @@ export async function init() {
 
 // ---- commands ----
 export const api = {
+  appVersion: () => invoke('app_version'),
   setLanguage: language => invoke('set_language', { language }),
   newSession: () => invoke('new_session'),
   setWindowTitle: title => invoke('set_window_title', { title }),
