@@ -22,7 +22,7 @@ impl RemoteSession {
         match site.protocol.as_str() {
             "sftp" => {
                 if proxy.is_some() {
-                    return Err("SFTP 暂不支持经代理连接".into());
+                    return Err(crate::localized!("SFTP 暂不支持经代理连接", "SFTP connections through a proxy are not supported yet"));
                 }
                 Ok(Self::Sftp(SftpBackend::connect(site).await?))
             }

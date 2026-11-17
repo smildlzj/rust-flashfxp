@@ -151,47 +151,83 @@ export function WinDialog({ open, title, width = 640, height, fixedHeight = fals
 
 export function WinMenuBar({ menus }) {
   const [open, setOpen] = useState(null)
+  const [submenu, setSubmenu] = useState(null)
   const ref = useRef(null)
+  const close = () => { setOpen(null); setSubmenu(null) }
   useEffect(() => {
-    const onDown = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(null) }
-    const onKey = (e) => { if (e.key === 'Escape') setOpen(null) }
-    const onForceClose = () => setOpen(null)
+    const onDown = e => { if (ref.current && !ref.current.contains(e.target)) close() }
+    const onKey = e => { if (e.key === 'Escape') close() }
     document.addEventListener('mousedown', onDown)
     document.addEventListener('keydown', onKey)
-    document.addEventListener('fx-close-menus', onForceClose)
+    document.addEventListener('fx-close-menus', close)
     return () => {
       document.removeEventListener('mousedown', onDown)
       document.removeEventListener('keydown', onKey)
-      document.removeEventListener('fx-close-menus', onForceClose)
+      document.removeEventListener('fx-close-menus', close)
     }
   }, [])
-  return (
-    <div className="fx-menubar" ref={ref}>
-      {menus.map((m, i) => (
-        <div key={m.name} style={{ position: 'relative' }}>
-          <button className={`fx-menu-top ${open === i ? 'fx-open' : ''}`}
-                  onClick={() => setOpen(open === i ? null : i)}
-                  onMouseEnter={() => { if (open !== null) setOpen(i) }}>
-            {m.name}
-          </button>
-          {open === i && (
-            <div className="fx-menu-popup">
-              {m.items.map((it, j) => it.sep
-                ? <div className="fx-menu-sep" key={j} />
-                : (
-                  <button key={j} className="fx-menu-row" disabled={!!it.disabled}
-                          onClick={() => { setOpen(null); it.act && it.act() }}>
-                    <span className="fx-menu-check">{it.checked ? '✓' : ''}</span>
-                    <span className="fx-menu-label">{typeof it.label === 'function' ? it.label() : it.label}</span>
-                    {it.key && <span className="fx-menu-key">{it.key}</span>}
-                  </button>
-                ))}
-            </div>
-          )}
-        </div>
-      ))}
+  const navigate = (event, path) => {
+    if (event.key === 'ArrowLeft' && path) {
+      event.preventDefault(); event.stopPropagation()
+      setSubmenu(null)
+      event.currentTarget.parentElement.querySelector(':scope > button')?.focus()
+      return
+    }
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+    event.preventDefault(); event.stopPropagation()
+    const buttons = [...event.currentTarget.querySelectorAll('button:not(:disabled)')]
+      .filter(button => button.closest('[role="menu"]') === event.currentTarget)
+    const index = buttons.indexOf(document.activeElement)
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1
+      : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length
+    buttons[next]?.focus()
+  }
+  const renderItems = (items, path = '') => items.map((item, index) => {
+    const key = `${path}/${index}`
+    if (item.sep) return <div role="separator" className="fx-menu-sep" key={key} />
+    const expanded = submenu === key
+    const button = <button type="button" className="fx-menu-row" disabled={!!item.disabled}
+      role={item.checked !== undefined ? 'menuitemradio' : 'menuitem'}
+      aria-checked={item.checked !== undefined ? !!item.checked : undefined}
+      aria-haspopup={item.items ? 'menu' : undefined}
+      aria-expanded={item.items ? expanded : undefined}
+      autoFocus={index === 0}
+      onMouseEnter={() => { if (item.items) setSubmenu(key); else if (!path) setSubmenu(null) }}
+      onKeyDown={event => {
+        if (item.items && event.key === 'ArrowRight') {
+          event.preventDefault(); event.stopPropagation(); setSubmenu(key)
+        }
+      }}
+      onClick={() => {
+        if (item.items) setSubmenu(key)
+        else { close(); item.act?.() }
+      }}>
+      <span className="fx-menu-check">{item.checked ? '✓' : ''}</span>
+      <span className="fx-menu-label">{typeof item.label === 'function' ? item.label() : item.label}</span>
+      {item.key && <span className="fx-menu-key">{item.key}</span>}
+      {item.items && <span aria-hidden="true">›</span>}
+    </button>
+    return <div key={key} className="fx-menu-item" role="none">
+      {button}
+      {item.items && expanded && <div role="menu" aria-label={item.label}
+        className="fx-menu-popup fx-menu-submenu" onKeyDown={event => navigate(event, key)}>
+        {renderItems(item.items, key)}
+      </div>}
     </div>
-  )
+  })
+  return <div className="fx-menubar" ref={ref} role="menubar">
+    {menus.map((menu, index) => <div key={index} style={{ position: 'relative' }}>
+      <button type="button" role="menuitem" aria-haspopup="menu" aria-expanded={open === index}
+        className={`fx-menu-top ${open === index ? 'fx-open' : ''}`}
+        onClick={() => { setSubmenu(null); setOpen(open === index ? null : index) }}
+        onMouseEnter={() => { if (open !== null && open !== index) { setSubmenu(null); setOpen(index) } }}
+        onKeyDown={event => { if (event.key === 'ArrowDown') { event.preventDefault(); setOpen(index) } }}>
+        {menu.name}
+      </button>
+      {open === index && <div role="menu" aria-label={menu.name} className="fx-menu-popup"
+        onKeyDown={event => navigate(event, '')}>{renderItems(menu.items)}</div>}
+    </div>)}
+  </div>
 }
 
 /* ===================== 右键菜单 ===================== */

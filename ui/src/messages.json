@@ -1,0 +1,1090 @@
+{
+  "path_history": {
+    "zh": "路径历史",
+    "en": "Path history"
+  },
+  "no_path_history": {
+    "zh": "（暂无历史路径）",
+    "en": "(No path history)"
+  },
+  "resize_queue_and_log_height": {
+    "zh": "调整队列与日志区域高度",
+    "en": "Resize queue and log height"
+  },
+  "resize_queue_and_log_widths": {
+    "zh": "调整队列与日志宽度",
+    "en": "Resize queue and log widths"
+  },
+  "connected_to_site": {
+    "zh": "已连接站点",
+    "en": "Connected to site"
+  },
+  "connected": {
+    "zh": "已连接",
+    "en": "Connected"
+  },
+  "disconnected": {
+    "zh": "已断开",
+    "en": "Disconnected"
+  },
+  "listing_complete_value_value_items": {
+    "zh": "列表完成: {0} ({1} 项)",
+    "en": "Listing complete: {0} ({1} items)"
+  },
+  "error_value": {
+    "zh": "错误: {0}",
+    "en": "Error: {0}"
+  },
+  "transfer_complete": {
+    "zh": "传输完成",
+    "en": "Transfer complete"
+  },
+  "transfer_failed_value": {
+    "zh": "传输失败: {0}",
+    "en": "Transfer failed: {0}"
+  },
+  "restored_value_queued_transfers_resume_manually": {
+    "zh": "已恢复 {0} 个待传任务（需手动恢复传输）",
+    "en": "Restored {0} queued transfers (resume manually)"
+  },
+  "no_transfers_to_resume": {
+    "zh": "没有待恢复的任务",
+    "en": "No transfers to resume"
+  },
+  "initial_local_directory_unavailable_value": {
+    "zh": "本地初始目录不可用：{0}",
+    "en": "Initial local directory unavailable: {0}"
+  },
+  "synchronized_browsing_no_matching_remote_directory": {
+    "zh": "同步浏览：远程侧没有同名目录",
+    "en": "Synchronized browsing: no matching remote directory"
+  },
+  "synchronized_browsing_no_matching_local_directory": {
+    "zh": "同步浏览：本地侧没有同名目录",
+    "en": "Synchronized browsing: no matching local directory"
+  },
+  "new_local_folder": {
+    "zh": "新建本地目录",
+    "en": "New local folder"
+  },
+  "new_remote_folder": {
+    "zh": "新建远程目录",
+    "en": "New remote folder"
+  },
+  "create_folder_failed_value": {
+    "zh": "创建目录失败: {0}",
+    "en": "Create folder failed: {0}"
+  },
+  "rename": {
+    "zh": "重命名",
+    "en": "Rename"
+  },
+  "rename_failed_value": {
+    "zh": "重命名失败: {0}",
+    "en": "Rename failed: {0}"
+  },
+  "delete_value": {
+    "zh": "删除「{0}」？",
+    "en": "Delete “{0}”?"
+  },
+  "delete_failed_value": {
+    "zh": "删除失败: {0}",
+    "en": "Delete failed: {0}"
+  },
+  "comparison_complete_value_differences": {
+    "zh": "比较完成：{0} 处差异",
+    "en": "Comparison complete: {0} differences"
+  },
+  "local_directory_is_not_ready_for_transfer": {
+    "zh": "本地目录未就绪，无法传输",
+    "en": "Local directory is not ready for transfer"
+  },
+  "queue_value_value": {
+    "zh": "队列: {0} {1}",
+    "en": "Queue: {0} {1}"
+  },
+  "download": {
+    "zh": "下载",
+    "en": "Download"
+  },
+  "upload": {
+    "zh": "上传",
+    "en": "Upload"
+  },
+  "no_waiting_transfers_in_queue": {
+    "zh": "队列中没有等待的任务",
+    "en": "No waiting transfers in queue"
+  },
+  "requested_cancellation_of_value_waiting_transfers": {
+    "zh": "已请求取消 {0} 个等待任务",
+    "en": "Requested cancellation of {0} waiting transfers"
+  },
+  "site_transfer_value_value_value_value": {
+    "zh": "互传: {0}:{1} → {2}:{3}",
+    "en": "Site transfer: {0}:{1} → {2}:{3}"
+  },
+  "enter_a_server_address": {
+    "zh": "请输入服务器地址",
+    "en": "Enter a server address"
+  },
+  "connection_failed_value": {
+    "zh": "连接失败：{0}",
+    "en": "Connection failed: {0}"
+  },
+  "rust_flash_ftp_started": {
+    "zh": "Rust Flash Ftp 已启动",
+    "en": "Rust Flash Ftp started"
+  },
+  "l_ftp_ftps_sftp_ready": {
+    "zh": "[L] FTP / FTPS / SFTP 已就绪",
+    "en": "[L] FTP / FTPS / SFTP ready"
+  },
+  "l_connection_mode_passive_pasv": {
+    "zh": "[L] 连接模式: 被动 (PASV)",
+    "en": "[L] Connection mode: Passive (PASV)"
+  },
+  "l_filename_encoding_auto_detect": {
+    "zh": "[L] 文件名编码: 自动检测",
+    "en": "[L] Filename encoding: Auto-detect"
+  },
+  "l_proxy_server_disabled": {
+    "zh": "[L] 代理服务器: 未启用",
+    "en": "[L] Proxy server: Disabled"
+  },
+  "l_local_browser_value": {
+    "zh": "[L] 本地浏览器: {0}",
+    "en": "[L] Local browser: {0}"
+  },
+  "l_queue_window_0_items": {
+    "zh": "[L] 队列窗口: 0 项",
+    "en": "[L] Queue window: 0 items"
+  },
+  "l_transfer_queue_sequential_resume_enabled": {
+    "zh": "[L] 传输队列: 串行，断点续传已启用",
+    "en": "[L] Transfer queue: Sequential, resume enabled"
+  },
+  "l_status_idle_waiting_for_connection": {
+    "zh": "[L] 状态: 空闲 — 等待连接",
+    "en": "[L] Status: Idle — waiting for connection"
+  },
+  "initialization_failed_value": {
+    "zh": "初始化失败: {0}",
+    "en": "Initialization failed: {0}"
+  },
+  "session_e": {
+    "zh": "会话(E)",
+    "en": "Session(E)"
+  },
+  "quick_connect": {
+    "zh": "快速连接…",
+    "en": "Quick Connect…"
+  },
+  "connect_to_site": {
+    "zh": "连接到站点…",
+    "en": "Connect to Site…"
+  },
+  "disconnect_d": {
+    "zh": "断开(D)",
+    "en": "Disconnect(D)"
+  },
+  "disconnect_all": {
+    "zh": "全部断开",
+    "en": "Disconnect All"
+  },
+  "exit_x": {
+    "zh": "退出(X)",
+    "en": "Exit(X)"
+  },
+  "sites_s": {
+    "zh": "站点(S)",
+    "en": "Sites(S)"
+  },
+  "site_manager": {
+    "zh": "站点管理器…",
+    "en": "Site Manager…"
+  },
+  "site_to_site_transfer_r": {
+    "zh": "站点互传(R)…",
+    "en": "Site to Site Transfer(R)…"
+  },
+  "options_o": {
+    "zh": "选项(O)",
+    "en": "Options(O)"
+  },
+  "preferences": {
+    "zh": "参数选择…",
+    "en": "Preferences…"
+  },
+  "proxy_settings_p": {
+    "zh": "代理设置(P)…",
+    "en": "Proxy Settings(P)…"
+  },
+  "queue_z": {
+    "zh": "队列(Z)",
+    "en": "Queue(Z)"
+  },
+  "show_hide_queue_and_log": {
+    "zh": "显示/隐藏 队列与日志",
+    "en": "Show/Hide Queue and Log"
+  },
+  "resume_pending": {
+    "zh": "恢复待传",
+    "en": "Resume Pending"
+  },
+  "cancel_waiting_transfers": {
+    "zh": "取消等待任务",
+    "en": "Cancel Waiting Transfers"
+  },
+  "clear_completed": {
+    "zh": "清空已完成",
+    "en": "Clear Completed"
+  },
+  "tools_t": {
+    "zh": "工具(T)",
+    "en": "Tools(T)"
+  },
+  "compare_folders": {
+    "zh": "比较文件夹",
+    "en": "Compare Folders"
+  },
+  "clear_comparison_marks": {
+    "zh": "清除比较标记",
+    "en": "Clear Comparison Marks"
+  },
+  "synchronized_browsing": {
+    "zh": "同步浏览",
+    "en": "Synchronized Browsing"
+  },
+  "directory_d": {
+    "zh": "目录(D)",
+    "en": "Directory(D)"
+  },
+  "new_folder": {
+    "zh": "新建目录…",
+    "en": "New Folder…"
+  },
+  "rename_2": {
+    "zh": "重命名…",
+    "en": "Rename…"
+  },
+  "delete": {
+    "zh": "删除",
+    "en": "Delete"
+  },
+  "refresh_f5": {
+    "zh": "刷新(F5)",
+    "en": "Refresh(F5)"
+  },
+  "view_v": {
+    "zh": "查看(V)",
+    "en": "View(V)"
+  },
+  "directory_tree": {
+    "zh": "目录树",
+    "en": "Directory Tree"
+  },
+  "queue_and_log_windows": {
+    "zh": "队列与日志窗口",
+    "en": "Queue and Log Windows"
+  },
+  "quick_connect_bar": {
+    "zh": "快速连接栏",
+    "en": "Quick Connect Bar"
+  },
+  "header_status_bar": {
+    "zh": "头部状态栏",
+    "en": "Header Status Bar"
+  },
+  "help_h": {
+    "zh": "帮助(H)",
+    "en": "Help(H)"
+  },
+  "about_rust_flash_ftp": {
+    "zh": "关于 Rust Flash Ftp…",
+    "en": "About Rust Flash Ftp…"
+  },
+  "site_manager_2": {
+    "zh": "站点管理器",
+    "en": "Site Manager"
+  },
+  "disconnected_click_to_select_a_site": {
+    "zh": "未连接 — 点击选择站点",
+    "en": "Disconnected — click to select a site"
+  },
+  "proxy_manager": {
+    "zh": "代理管理器",
+    "en": "Proxy Manager"
+  },
+  "proxy": {
+    "zh": "代理",
+    "en": "Proxy"
+  },
+  "site_to_site_transfer": {
+    "zh": "站点互传",
+    "en": "Site to Site Transfer"
+  },
+  "site_transfer": {
+    "zh": "互传",
+    "en": "Site Transfer"
+  },
+  "open_queue_window": {
+    "zh": "打开队列窗口",
+    "en": "Open Queue Window"
+  },
+  "queue": {
+    "zh": "队列",
+    "en": "Queue"
+  },
+  "active": {
+    "zh": "活动 /",
+    "en": "active /"
+  },
+  "waiting": {
+    "zh": "等待",
+    "en": "waiting"
+  },
+  "open_log_window": {
+    "zh": "打开日志窗口",
+    "en": "Open Log Window"
+  },
+  "log": {
+    "zh": "日志",
+    "en": "Log"
+  },
+  "preferences_2": {
+    "zh": "参数选择",
+    "en": "Preferences"
+  },
+  "options": {
+    "zh": "选项",
+    "en": "Options"
+  },
+  "local_browser": {
+    "zh": "本地浏览器",
+    "en": "Local Browser"
+  },
+  "clear_completed_transfers": {
+    "zh": "清空已完成队列",
+    "en": "Clear Completed Transfers"
+  },
+  "resume_pending_transfers": {
+    "zh": "恢复待传任务",
+    "en": "Resume Pending Transfers"
+  },
+  "synchronized_browsing_on_off": {
+    "zh": "同步浏览（开/关）",
+    "en": "Synchronized Browsing (On/Off)"
+  },
+  "local_home_directory": {
+    "zh": "本地主目录",
+    "en": "Local Home Directory"
+  },
+  "connect_quick_connect_site": {
+    "zh": "连接（快速连接 / 站点）",
+    "en": "Connect (Quick Connect / Site)"
+  },
+  "disconnect": {
+    "zh": "断开连接",
+    "en": "Disconnect"
+  },
+  "refresh_both_panes": {
+    "zh": "刷新双栏",
+    "en": "Refresh Both Panes"
+  },
+  "quick_connect_2": {
+    "zh": "快速连接:",
+    "en": "Quick Connect:"
+  },
+  "server_or_url": {
+    "zh": "服务器或 URL:",
+    "en": "Server or URL:"
+  },
+  "port": {
+    "zh": "端口:",
+    "en": "Port:"
+  },
+  "username": {
+    "zh": "用户名称:",
+    "en": "Username:"
+  },
+  "password": {
+    "zh": "密码:",
+    "en": "Password:"
+  },
+  "connect": {
+    "zh": "连接",
+    "en": "Connect"
+  },
+  "quick_connect_3": {
+    "zh": "快速连接",
+    "en": "Quick Connect"
+  },
+  "parent_directory": {
+    "zh": "上级目录",
+    "en": "Parent Directory"
+  },
+  "remote_home_directory": {
+    "zh": "远程主目录",
+    "en": "Remote Home Directory"
+  },
+  "remote_browser": {
+    "zh": "远程浏览器",
+    "en": "Remote Browser"
+  },
+  "queue_window": {
+    "zh": "队列窗口",
+    "en": "Queue Window"
+  },
+  "log_window": {
+    "zh": "日志窗口",
+    "en": "Log Window"
+  },
+  "show_queue_and_log_side_by_side": {
+    "zh": "并排显示队列与日志",
+    "en": "Show Queue and Log Side by Side"
+  },
+  "side_by_side": {
+    "zh": "并排",
+    "en": "Side by Side"
+  },
+  "resume_pending_2": {
+    "zh": "▶ 恢复待传",
+    "en": "▶ Resume Pending"
+  },
+  "transfers": {
+    "zh": "传输",
+    "en": "Transfers"
+  },
+  "waiting_2": {
+    "zh": "· 等待",
+    "en": "· Waiting"
+  },
+  "completed": {
+    "zh": "· 完成",
+    "en": "· Completed"
+  },
+  "name": {
+    "zh": "名称",
+    "en": "Name"
+  },
+  "destination": {
+    "zh": "目标",
+    "en": "Destination"
+  },
+  "size": {
+    "zh": "大小",
+    "en": "Size"
+  },
+  "notes": {
+    "zh": "备注",
+    "en": "Notes"
+  },
+  "cancel_transfer": {
+    "zh": "取消该任务",
+    "en": "Cancel Transfer"
+  },
+  "copy_name": {
+    "zh": "复制名称",
+    "en": "Copy Name"
+  },
+  "awaiting_resume": {
+    "zh": "等待恢复",
+    "en": "Awaiting Resume"
+  },
+  "transferring": {
+    "zh": "传输中",
+    "en": "Transferring"
+  },
+  "completed_2": {
+    "zh": "完成",
+    "en": "Completed"
+  },
+  "cancelled": {
+    "zh": "已取消",
+    "en": "Cancelled"
+  },
+  "failed": {
+    "zh": "失败",
+    "en": "Failed"
+  },
+  "ready_rust_flash_ftp_started_waiting_for_connection": {
+    "zh": "[就绪] Rust Flash Ftp 已启动，等待连接…",
+    "en": "[Ready] Rust Flash Ftp started, waiting for connection…"
+  },
+  "idle": {
+    "zh": "空闲",
+    "en": "Idle"
+  },
+  "local_browser_value": {
+    "zh": "本地浏览器 — {0}",
+    "en": "Local Browser — {0}"
+  },
+  "about_rust_flash_ftp_2": {
+    "zh": "关于 Rust Flash Ftp",
+    "en": "About Rust Flash Ftp"
+  },
+  "ok": {
+    "zh": "确定",
+    "en": "OK"
+  },
+  "version_0_1_rust_edition": {
+    "zh": "版本 0.1 (Rust 复刻版)",
+    "en": "Version 0.1 (Rust edition)"
+  },
+  "ftp_ftps_sftp_client": {
+    "zh": "FTP / FTPS / SFTP 客户端",
+    "en": "FTP / FTPS / SFTP client"
+  },
+  "features": {
+    "zh": "功能",
+    "en": "Features"
+  },
+  "ftp_ftps_sftp_site_management_proxies_dual_panes_transfer_resume": {
+    "zh": "FTP / FTPS / SFTP、站点管理、代理、双栏浏览、断点续传、",
+    "en": "FTP / FTPS / SFTP, site management, proxies, dual panes, transfer resume,"
+  },
+  "persistent_queue_synchronized_browsing_directory_comparison_site_transfers": {
+    "zh": "队列持久化、同步浏览、目录比较、站点互传。",
+    "en": "persistent queue, synchronized browsing, directory comparison, site transfers."
+  },
+  "cancel": {
+    "zh": "取消",
+    "en": "Cancel"
+  },
+  "site_does_not_exist": {
+    "zh": "站点不存在",
+    "en": "Site does not exist"
+  },
+  "connect_to_value": {
+    "zh": "连接 {0}",
+    "en": "Connect to {0}"
+  },
+  "username_2": {
+    "zh": "用户名",
+    "en": "Username"
+  },
+  "password_2": {
+    "zh": "密码",
+    "en": "Password"
+  },
+  "these_credentials_will_not_be_saved_to_the_site_configuration": {
+    "zh": "本次输入的凭证不会保存到站点配置。",
+    "en": "These credentials will not be saved to the site configuration."
+  },
+  "open": {
+    "zh": "打开",
+    "en": "Open"
+  },
+  "collapse": {
+    "zh": "折叠",
+    "en": "Collapse"
+  },
+  "expand": {
+    "zh": "展开",
+    "en": "Expand"
+  },
+  "refresh": {
+    "zh": "刷新",
+    "en": "Refresh"
+  },
+  "copy_path": {
+    "zh": "复制路径",
+    "en": "Copy Path"
+  },
+  "user": {
+    "zh": "用户",
+    "en": "User"
+  },
+  "desktop": {
+    "zh": "桌面",
+    "en": "Desktop"
+  },
+  "cloud_drive": {
+    "zh": "云盘",
+    "en": "Cloud Drive"
+  },
+  "this_computer": {
+    "zh": "此电脑",
+    "en": "This Computer"
+  },
+  "documents": {
+    "zh": "文稿",
+    "en": "Documents"
+  },
+  "pictures": {
+    "zh": "图片",
+    "en": "Pictures"
+  },
+  "music": {
+    "zh": "音乐",
+    "en": "Music"
+  },
+  "movies": {
+    "zh": "影片",
+    "en": "Movies"
+  },
+  "local_disk_c": {
+    "zh": "本地磁盘 (C:)",
+    "en": "Local Disk (C:)"
+  },
+  "local_disk_d": {
+    "zh": "本地磁盘 (D:)",
+    "en": "Local Disk (D:)"
+  },
+  "library": {
+    "zh": "库",
+    "en": "Library"
+  },
+  "network": {
+    "zh": "网络",
+    "en": "Network"
+  },
+  "refresh_directory_tree": {
+    "zh": "刷新目录树",
+    "en": "Refresh Directory Tree"
+  },
+  "home_directory": {
+    "zh": "主目录",
+    "en": "Home Directory"
+  },
+  "this_computer_root": {
+    "zh": "此电脑 (根目录)",
+    "en": "This Computer (Root)"
+  },
+  "transfer_upload_to_remote": {
+    "zh": "传输（上传到远程）",
+    "en": "Transfer (Upload to Remote)"
+  },
+  "transfer_download_to_local": {
+    "zh": "传输（下载到本地）",
+    "en": "Transfer (Download to Local)"
+  },
+  "compare_with_other_pane": {
+    "zh": "与对侧比较",
+    "en": "Compare with Other Pane"
+  },
+  "root_directory": {
+    "zh": "根目录",
+    "en": "Root Directory"
+  },
+  "sort_by_name": {
+    "zh": "按名称排序",
+    "en": "Sort by Name"
+  },
+  "sort_by_size": {
+    "zh": "按大小排序",
+    "en": "Sort by Size"
+  },
+  "sort_by_time": {
+    "zh": "按时间排序",
+    "en": "Sort by Time"
+  },
+  "modified": {
+    "zh": "修改时间",
+    "en": "Modified"
+  },
+  "attributes": {
+    "zh": "属性",
+    "en": "Attributes"
+  },
+  "files": {
+    "zh": "个文件,",
+    "en": "files,"
+  },
+  "folders_total": {
+    "zh": "个文件夹, 共计",
+    "en": "folders, total"
+  },
+  "items": {
+    "zh": "项 (",
+    "en": "items ("
+  },
+  "0_bytes": {
+    "zh": "0 字节",
+    "en": "0 bytes"
+  },
+  "value_free": {
+    "zh": " / {0} 可用",
+    "en": " / {0} free"
+  },
+  "default_local_directory": {
+    "zh": "默认本地目录:",
+    "en": "Default Local Directory:"
+  },
+  "leave_blank_to_use_the_home_directory": {
+    "zh": "留空则使用用户主目录",
+    "en": "Leave blank to use the home directory"
+  },
+  "use_current": {
+    "zh": "使用当前",
+    "en": "Use Current"
+  },
+  "startup_layout": {
+    "zh": "启动布局",
+    "en": "Startup Layout"
+  },
+  "show_quick_connect_bar_at_startup": {
+    "zh": "启动时显示快速连接栏",
+    "en": "Show Quick Connect bar at startup"
+  },
+  "show_header_status_bar_at_startup": {
+    "zh": "启动时显示头部状态栏",
+    "en": "Show header status bar at startup"
+  },
+  "show_directory_tree_at_startup": {
+    "zh": "启动时显示目录树",
+    "en": "Show directory tree at startup"
+  },
+  "show_queue_and_log_windows_at_startup": {
+    "zh": "启动时显示队列与日志窗口",
+    "en": "Show queue and log windows at startup"
+  },
+  "file_operation_confirmation": {
+    "zh": "文件操作确认",
+    "en": "File Operation Confirmation"
+  },
+  "confirm_before_deleting_files_folders": {
+    "zh": "删除文件 / 目录前询问确认",
+    "en": "Confirm before deleting files / folders"
+  },
+  "ok_o": {
+    "zh": "确定(O)",
+    "en": "OK(O)"
+  },
+  "general": {
+    "zh": "常规",
+    "en": "General"
+  },
+  "changes_to_the_startup_layout_apply_immediately_and_are_saved_for_the_next_launch": {
+    "zh": "提示：修改「启动布局」会立即影响当前窗口并保存到下次启动。",
+    "en": "Changes to the startup layout apply immediately and are saved for the next launch."
+  },
+  "delete_proxy_value": {
+    "zh": "删除代理「{0}」？",
+    "en": "Delete proxy “{0}”?"
+  },
+  "add_n": {
+    "zh": "新增(N)",
+    "en": "Add(N)"
+  },
+  "save_s": {
+    "zh": "保存(S)",
+    "en": "Save(S)"
+  },
+  "close_x": {
+    "zh": "关闭(X)",
+    "en": "Close(X)"
+  },
+  "proxy_settings": {
+    "zh": "代理设置",
+    "en": "Proxy Settings"
+  },
+  "proxy_server_list": {
+    "zh": "代理服务器列表",
+    "en": "Proxy Server List"
+  },
+  "no_proxies": {
+    "zh": "（暂无代理）",
+    "en": "(No proxies)"
+  },
+  "edit": {
+    "zh": "编辑",
+    "en": "Edit"
+  },
+  "name_2": {
+    "zh": "名称:",
+    "en": "Name:"
+  },
+  "type": {
+    "zh": "类型:",
+    "en": "Type:"
+  },
+  "host_address": {
+    "zh": "主机地址:",
+    "en": "Host Address:"
+  },
+  "username_3": {
+    "zh": "用户名:",
+    "en": "Username:"
+  },
+  "select_a_proxy_to_edit_or_click_add_to_create_a_proxy_server_configuration": {
+    "zh": "选择上方代理进行编辑，或点击「新增」创建新的代理服务器配置。",
+    "en": "Select a proxy to edit, or click Add to create a proxy server configuration."
+  },
+  "start_transfer": {
+    "zh": "开始互传",
+    "en": "Start Transfer"
+  },
+  "source_site": {
+    "zh": "源站点",
+    "en": "Source Site"
+  },
+  "site": {
+    "zh": "站点:",
+    "en": "Site:"
+  },
+  "select_a_site": {
+    "zh": "（选择站点）",
+    "en": "(Select a site)"
+  },
+  "source_path": {
+    "zh": "源路径:",
+    "en": "Source Path:"
+  },
+  "destination_site": {
+    "zh": "目标站点",
+    "en": "Destination Site"
+  },
+  "not_connected": {
+    "zh": "（未连接）",
+    "en": "(Not connected)"
+  },
+  "destination_path": {
+    "zh": "目标路径:",
+    "en": "Destination Path:"
+  },
+  "data_streams_through_memory_from_the_source_to_the_destination_8_256kb_pipeline_without_writing_to_disk_folders_are_copied_recursively": {
+    "zh": "数据在内存中从源站点直转目标站点（8×256KB 缓冲流水线），不落盘。目录将递归复制。",
+    "en": "Data streams through memory from the source to the destination (8×256KB pipeline), without writing to disk. Folders are copied recursively."
+  },
+  "use_root_directory": {
+    "zh": "填入根目录 /",
+    "en": "Use root directory /"
+  },
+  "browse_local_directory": {
+    "zh": "浏览本地目录…",
+    "en": "Browse Local Directory…"
+  },
+  "browse": {
+    "zh": "浏览…",
+    "en": "Browse…"
+  },
+  "enter_a_site_name_and_server_address": {
+    "zh": "请填写站点名称和服务器地址",
+    "en": "Enter a site name and server address"
+  },
+  "port_must_be_between_1_and_65535": {
+    "zh": "端口须为 1–65535",
+    "en": "Port must be between 1 and 65535"
+  },
+  "delete_site_value": {
+    "zh": "删除站点「{0}」？",
+    "en": "Delete site “{0}”?"
+  },
+  "no_sites_click_new_site_to_create_one": {
+    "zh": "（暂无站点，请点击「新建站点」）",
+    "en": "(No sites. Click New Site to create one.)"
+  },
+  "site_name": {
+    "zh": "站点名称",
+    "en": "Site Name"
+  },
+  "connection_type": {
+    "zh": "连接类型",
+    "en": "Connection Type"
+  },
+  "ftp_with_implicit_ssl_tls": {
+    "zh": "FTP 使用隐式 SSL/TLS",
+    "en": "FTP with implicit SSL/TLS"
+  },
+  "ftp_with_explicit_tls_auth_tls": {
+    "zh": "FTP 使用显式 TLS (AUTH TLS)",
+    "en": "FTP with explicit TLS (AUTH TLS)"
+  },
+  "address": {
+    "zh": "地址",
+    "en": "Address"
+  },
+  "port_2": {
+    "zh": "端口",
+    "en": "Port"
+  },
+  "login_type": {
+    "zh": "登录类型",
+    "en": "Login Type"
+  },
+  "normal": {
+    "zh": "普通",
+    "en": "Normal"
+  },
+  "anonymous": {
+    "zh": "匿名",
+    "en": "Anonymous"
+  },
+  "prompt_for_password_when_connecting": {
+    "zh": "连接时提示输入密码",
+    "en": "Prompt for password when connecting"
+  },
+  "ask_when_connecting_do_not_save_password": {
+    "zh": "连接时询问，不保存密码",
+    "en": "Ask when connecting; do not save password"
+  },
+  "remote_path": {
+    "zh": "远程路径",
+    "en": "Remote Path"
+  },
+  "leave_blank_for_the_server_default_directory": {
+    "zh": "留空使用服务器默认目录",
+    "en": "Leave blank for the server default directory"
+  },
+  "local_path": {
+    "zh": "本地路径",
+    "en": "Local Path"
+  },
+  "leave_blank_to_keep_the_current_local_directory": {
+    "zh": "留空保留当前本地目录",
+    "en": "Leave blank to keep the current local directory"
+  },
+  "proxy_server": {
+    "zh": "代理服务器",
+    "en": "Proxy Server"
+  },
+  "no_proxy": {
+    "zh": "不使用代理",
+    "en": "No proxy"
+  },
+  "server_time_zone": {
+    "zh": "服务器时区",
+    "en": "Server Time Zone"
+  },
+  "automatic_prefer_server_utc_time": {
+    "zh": "自动（优先使用服务器 UTC 时间）",
+    "en": "Automatic (prefer server UTC time)"
+  },
+  "saved_locally_never_sent_to_the_server": {
+    "zh": "仅保存在本地，不发送给服务器",
+    "en": "Saved locally; never sent to the server"
+  },
+  "advanced_settings": {
+    "zh": "高级设置",
+    "en": "Advanced Settings"
+  },
+  "account_acct": {
+    "zh": "账号 (ACCT):",
+    "en": "Account (ACCT):"
+  },
+  "optional_ftp_account": {
+    "zh": "可选 FTP 账号",
+    "en": "Optional FTP account"
+  },
+  "filename_encoding": {
+    "zh": "文件名编码:",
+    "en": "Filename Encoding:"
+  },
+  "auto_detect": {
+    "zh": "自动检测",
+    "en": "Auto-detect"
+  },
+  "gbk_simplified_chinese": {
+    "zh": "GBK (简体中文)",
+    "en": "GBK (Simplified Chinese)"
+  },
+  "big5_traditional_chinese": {
+    "zh": "Big5 (繁体中文)",
+    "en": "Big5 (Traditional Chinese)"
+  },
+  "shift_jis_japanese": {
+    "zh": "Shift-JIS (日文)",
+    "en": "Shift-JIS (Japanese)"
+  },
+  "transfer_mode": {
+    "zh": "传输模式:",
+    "en": "Transfer Mode:"
+  },
+  "passive_mode_pasv": {
+    "zh": "被动模式 (PASV)",
+    "en": "Passive Mode (PASV)"
+  },
+  "active_mode_port": {
+    "zh": "主动模式 (PORT)",
+    "en": "Active Mode (PORT)"
+  },
+  "proxy_2": {
+    "zh": "代理:",
+    "en": "Proxy:"
+  },
+  "none": {
+    "zh": "（无）",
+    "en": "(None)"
+  },
+  "group": {
+    "zh": "分组:",
+    "en": "Group:"
+  },
+  "use_passive_mode_pasv": {
+    "zh": "使用被动模式 (PASV)",
+    "en": "Use Passive Mode (PASV)"
+  },
+  "accept_invalid_ssl_certificates_self_signed_servers": {
+    "zh": "接受无效 SSL 证书（自签名服务器）",
+    "en": "Accept invalid SSL certificates (self-signed servers)"
+  },
+  "anonymous_login": {
+    "zh": "匿名登录",
+    "en": "Anonymous Login"
+  },
+  "site_name_2": {
+    "zh": "站点名称：",
+    "en": "Site name:"
+  },
+  "address_2": {
+    "zh": "地址：",
+    "en": "Address:"
+  },
+  "protocol": {
+    "zh": "协议：",
+    "en": "Protocol:"
+  },
+  "port_3": {
+    "zh": "端口：",
+    "en": "Port:"
+  },
+  "apply_a": {
+    "zh": "应用(A)",
+    "en": "Apply(A)"
+  },
+  "connect_c": {
+    "zh": "连接(C)",
+    "en": "Connect(C)"
+  },
+  "new_site_n": {
+    "zh": "新建站点(N)",
+    "en": "New Site(N)"
+  },
+  "new_group_g": {
+    "zh": "新建组(G)",
+    "en": "New Group(G)"
+  },
+  "delete_d": {
+    "zh": "删除(D)",
+    "en": "Delete(D)"
+  },
+  "new_group_name": {
+    "zh": "新分组名称",
+    "en": "New group name"
+  },
+  "advanced": {
+    "zh": "高级",
+    "en": "Advanced"
+  },
+  "select_a_site_on_the_left_or_click_new_site": {
+    "zh": "选择左侧站点，或点击「新建站点」",
+    "en": "Select a site on the left, or click New Site"
+  },
+  "double_click_a_site_to_connect": {
+    "zh": "双击站点名可直接连接",
+    "en": "Double-click a site to connect"
+  },
+  "apply_saves_the_site_settings_connect_saves_and_connects_immediately_press_f4_to_open_this_window": {
+    "zh": "提示：「应用」保存站点设置；「连接」保存并立即连接。快捷键 F4 打开本窗口。",
+    "en": "Apply saves the site settings. Connect saves and connects immediately. Press F4 to open this window."
+  },
+  "new_session": {
+    "zh": "新建会话",
+    "en": "New Session"
+  },
+  "language": {
+    "zh": "语言",
+    "en": "Language"
+  }
+}

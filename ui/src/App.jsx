@@ -1,3 +1,5 @@
+import { t, getLocale, errorMessage, formatNumber } from './i18n.js'
+import { useLanguage } from './LanguageContext.jsx'
 import CredentialsDialog from './components/CredentialsDialog.jsx'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import FilePane from './components/FilePane.jsx'
@@ -44,29 +46,27 @@ function AddressCombo({ value, onGo, disabled, history = [] }) {
                onChange={(e) => setBuf(e.target.value)}
                onKeyDown={(e) => { if (e.key === 'Enter' && buf) { onGo(buf); e.currentTarget.blur() } }}
                onBlur={() => { if (!open && buf && buf !== value) onGo(buf) }} />
-        <button type="button" className="caret" disabled={disabled} title="路径历史"
+        <button type="button" className="caret" disabled={disabled} title={t("path_history")}
                 onMouseDown={(e) => e.preventDefault()} onClick={() => setOpen(v => !v)}>▼</button>
       </div>
       {open && !disabled && (
         <div className="fx-combo-popup fx-scroll">
           {history.length
             ? history.map(p => <button key={p} className="fx-combo-item" title={p} onClick={() => pick(p)}>{p}</button>)
-            : <div className="fx-combo-empty">（暂无历史路径）</div>}
+            : <div className="fx-combo-empty">{t("no_path_history")}</div>}
         </div>
       )}
     </div>
   )
 }
 
-function LogBody({ text }) {
-  let cls = 'fx-log-info'
-  if (/失败|错误|拒绝|超时/.test(text)) cls = 'fx-log-err'
-  else if (/完成|已连接|成功|就绪|已启动|OK|220|150|226/.test(text)) cls = 'fx-log-ok'
-  else if (/队列|列表|连接|PASV|MLSD|LIST|传输/.test(text)) cls = 'fx-log-cmd'
+function LogBody({ text, level = 'info' }) {
+  const cls = { error: 'fx-log-err', success: 'fx-log-ok', command: 'fx-log-cmd', info: 'fx-log-info' }[level] || 'fx-log-info'
   return <span className={cls}>{text}</span>
 }
 
 export default function App() {
+  const { language, setLanguage } = useLanguage()
   // ---- UI 配置持久化（localStorage；须在所有使用它的 useState 之前） ----
   const uiPref = {
     get: (k, d) => {
@@ -81,12 +81,12 @@ export default function App() {
 
   const [localDir, setLocalDir] = useState('')
   const [localEntries, setLocalEntries] = useState([])
-  const [localSel, setLocalSel] = useState(null)
+  const [localSelectionName, setLocalSelectionName] = useState(null)
   const [diskFree, setDiskFree] = useState(0)
 
   const [remoteDir, setRemoteDir] = useState(null)
   const [remoteEntries, setRemoteEntries] = useState([])
-  const [remoteSel, setRemoteSel] = useState(null)
+  const [remoteSelectionName, setRemoteSelectionName] = useState(null)
   const [activePane, setActivePane] = useState('local') // 键盘操作作用于哪一栏
 
   const [localHistory, setLocalHistory] = useState([])
@@ -103,6 +103,47 @@ export default function App() {
   const [showBottom, setShowBottom] = useState(() => uiPref.get('startupBottom', true))
   // 原版默认布局：目录树显示、队列与日志并排、快速连接栏可见
   const [bottomTab, setBottomTab] = useState('both')
+  const [bottomHeight, setBottomHeight] = useState(() => {
+    const value = uiPref.get('bottomHeight', 220)
+    return Number.isFinite(value) ? Math.max(100, value) : 220
+  })
+  const [queueWidth, setQueueWidth] = useState(() => {
+    const value = uiPref.get('queueWidth', 73)
+    return Number.isFinite(value) ? Math.max(20, Math.min(80, value)) : 73
+  })
+  const resizeBottom = (event, axis) => {
+    if (event.button !== 0) return
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    const container = event.currentTarget.parentElement
+    event.currentTarget.dataset.resizing = axis
+    event.currentTarget._resizeBounds = container.getBoundingClientRect()
+  }
+  const moveBottom = (event) => {
+    const handle = event.currentTarget
+    if (!handle.hasPointerCapture(event.pointerId)) return
+    const bounds = handle._resizeBounds
+    if (handle.dataset.resizing === 'height') {
+      const height = Math.round(Math.max(100, Math.min(window.innerHeight * 0.6, bounds.bottom - event.clientY)))
+      setBottomHeight(height)
+      uiPref.set('bottomHeight', height)
+    } else {
+      const width = Math.max(20, Math.min(80, (event.clientX - bounds.left) / bounds.width * 100))
+      setQueueWidth(width)
+      uiPref.set('queueWidth', width)
+    }
+  }
+  const splitterProps = (axis) => ({
+    role: 'separator',
+    'aria-label': axis === 'height' ? t("resize_queue_and_log_height") : t("resize_queue_and_log_widths"),
+    'aria-orientation': axis === 'height' ? 'horizontal' : 'vertical',
+    onPointerDown: (event) => resizeBottom(event, axis),
+    onPointerMove: moveBottom,
+    onPointerUp: (event) => {
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    },
+  })
+
   const [showTree, setShowTree] = useState(() => uiPref.get('startupTree', true))
   const [showQuick, setShowQuick] = useState(() => uiPref.get('startupQuickbar', true))
   const [showHeader, setShowHeader] = useState(() => uiPref.get('startupHeaderbar', true))
@@ -139,10 +180,10 @@ export default function App() {
   const bootLogged = useRef(false) // StrictMode 下避免启动日志重复
   const ctxMenu = useWinContextMenu()
 
-  const addLog = (text) => {
+  const addLog = (text, level = 'info') => {
     const now = new Date()
     const p = (x) => String(x).padStart(2, '0')
-    setLog(l => [...l.slice(-499), `[${p(now.getHours())}:${p(now.getMinutes())}:${p(now.getSeconds())}] ${text}`])
+    setLog(l => [...l.slice(-499), { text: `[${p(now.getHours())}:${p(now.getMinutes())}:${p(now.getSeconds())}] ${text}`, level }])
   }
 
   // ---- 排序 ----
@@ -150,7 +191,7 @@ export default function App() {
     const v = [...entries]
     const dirOf = (e) => (e.isDir ? 0 : 1)
     const cmp = {
-      name: (a, b) => dirOf(a) - dirOf(b) || a.name.localeCompare(b.name, 'zh-Hans-CN'),
+      name: (a, b) => dirOf(a) - dirOf(b) || a.name.localeCompare(b.name, language),
       size: (a, b) => dirOf(a) - dirOf(b) || a.size - b.size,
       time: (a, b) => dirOf(a) - dirOf(b) || (a.mtime || 0) - (b.mtime || 0),
     }[st.key]
@@ -158,11 +199,22 @@ export default function App() {
     if (st.desc) v.reverse()
     return v
   }
-  const sortedLocal = useMemo(() => sortEntries(localEntries, sortLocal), [localEntries, sortLocal])
-  const sortedRemote = useMemo(() => sortEntries(remoteEntries, sortRemote), [remoteEntries, sortRemote])
+  const sortedLocal = useMemo(() => sortEntries(localEntries, sortLocal), [localEntries, sortLocal, language])
+  const sortedRemote = useMemo(() => sortEntries(remoteEntries, sortRemote), [remoteEntries, sortRemote, language])
   // 排序结果需在定义之后再写入 ref（早于此处引用会触发 TDZ 白屏）
   stateRef.current.sortedLocal = sortedLocal
   stateRef.current.sortedRemote = sortedRemote
+
+  // Selection belongs to a filename, not its position in the current locale's sort order.
+  const selectedIndex = (entries, name) => {
+    if (name == null) return null
+    const index = entries.findIndex(entry => entry.name === name)
+    return index < 0 ? null : index
+  }
+  const localSel = selectedIndex(sortedLocal, localSelectionName)
+  const remoteSel = selectedIndex(sortedRemote, remoteSelectionName)
+  const setLocalSel = index => setLocalSelectionName(index == null ? null : stateRef.current.sortedLocal[index]?.name ?? null)
+  const setRemoteSel = index => setRemoteSelectionName(index == null ? null : stateRef.current.sortedRemote[index]?.name ?? null)
 
   // ---- 事件处理 ----
   const handleEvent = (p) => {
@@ -176,8 +228,8 @@ export default function App() {
     if (typeof p === 'string') {
       if (p === 'Connected') {
         setConnected(true)
-        addLog('已连接站点')
-        showNotice('已连接')
+        addLog(t("connected_to_site"), 'success')
+        showNotice(t("connected"))
         restoreQueue()
       } else if (p === 'Disconnected') {
         setConnected(false)
@@ -185,7 +237,7 @@ export default function App() {
         setRemoteDir(null)
         setRemoteEntries([])
         setRemoteSel(null)
-        addLog('已断开')
+        addLog(t("disconnected"))
       }
       return
     }
@@ -205,10 +257,10 @@ export default function App() {
       setRemoteEntries(normalizeEntries(p.RemoteList.entries))
       setRemoteSel(null)
       setRemoteMarks({})
-      addLog(`列表完成: ${p.RemoteList.path} (${p.RemoteList.entries.length} 项)`)
+      addLog(t("listing_complete_value_value_items", [p.RemoteList.path, p.RemoteList.entries.length]))
     } else if (p.Notify) {
       showNotice(p.Notify.text)
-      if (p.Notify.level === 'error') addLog(`错误: ${p.Notify.text}`)
+      if (p.Notify.level === 'error') addLog(t("error_value", [p.Notify.text]), p.Notify.level)
     } else if (p.TransferStarted) {
       setQueue(qs => qs.map(q => q.id === p.TransferStarted.id
         ? { ...q, size: p.TransferStarted.size, status: 'active' } : q))
@@ -217,15 +269,15 @@ export default function App() {
         ? { ...q, transferred: p.TransferProgress.transferred } : q))
     } else if (p.TransferFinished) {
       setQueue(qs => qs.map(q => q.id === p.TransferFinished.id
-        ? { ...q, status: p.TransferFinished.ok ? 'done' : 'failed', error: p.TransferFinished.error || '' } : q))
+        ? { ...q, status: p.TransferFinished.ok ? 'done' : 'failed', error: p.TransferFinished.error || '', cancelled: !!p.TransferFinished.cancelled } : q))
       if (p.TransferFinished.ok) {
-        addLog('传输完成')
-        showNotice('传输完成')
+        addLog(t("transfer_complete"), 'success')
+        showNotice(t("transfer_complete"))
         if (stateRef.current.localDir) api.localList(stateRef.current.localDir)
         if (stateRef.current.remoteDir) api.remoteList(stateRef.current.remoteDir)
       } else {
-        addLog(`传输失败: ${p.TransferFinished.error || ''}`)
-        showNotice(`传输失败: ${p.TransferFinished.error || ''}`)
+        addLog(t("transfer_failed_value", [p.TransferFinished.error || '']), 'error')
+        showNotice(t("transfer_failed_value", [p.TransferFinished.error || '']))
       }
     }
   }
@@ -239,20 +291,22 @@ export default function App() {
           size: 0, transferred: 0, status: 'waiting', restored: true, isDir: it.isDir,
         }))])
         setShowBottom(true)
-        showNotice(`已恢复 ${items.length} 个待传任务（需手动恢复传输）`)
+        showNotice(t("restored_value_queued_transfers_resume_manually", [items.length]))
       }
     } catch {}
   }
 
-  const resumeRestored = () => {
+  const resumeRestored = async () => {
     const items = queue.filter(q => q.restored && q.status === 'waiting')
-    if (!items.length) { showNotice('没有待恢复的任务'); return }
+    if (!items.length) { showNotice(t("no_transfers_to_resume")); return }
     for (const it of items) {
-      api.enqueue({
-        id: it.id, direction: it.direction,
-        remotePath: it.remote, localPath: it.local, isDir: it.isDir,
-      })
-      setQueue(qs => qs.map(q => q.id === it.id ? { ...q, restored: false } : q))
+      try {
+        await api.enqueue({
+          id: it.id, direction: it.direction,
+          remotePath: it.remote, localPath: it.local, isDir: it.isDir,
+        })
+        setQueue(qs => qs.map(q => q.id === it.id ? { ...q, restored: false } : q))
+      } catch (error) { showNotice(errorMessage(error)) }
     }
   }
 
@@ -264,7 +318,7 @@ export default function App() {
   const applySiteLocalPath = (site) => {
     const p = (site && site.localPath || '').trim()
     if (p) {
-      api.treeList(p).then(() => api.localList(p)).catch(e => showNotice(`本地初始目录不可用：${e}`))
+      api.treeList(p).then(() => api.localList(p)).catch(e => showNotice(t("initial_local_directory_unavailable_value", [e])))
     }
   }
   const localUp = () => {
@@ -286,7 +340,7 @@ export default function App() {
       if (syncBrowse && remoteDir) {
         const r = sortedRemote.find(x => x.name === e.name && x.isDir)
         if (r) api.remoteList(remoteJoin(remoteDir, e.name))
-        else showNotice('同步浏览：远程侧没有同名目录')
+        else showNotice(t("synchronized_browsing_no_matching_remote_directory"))
       }
     } else if (remoteDir) {
       enqueue('upload', e.name, false)
@@ -301,7 +355,7 @@ export default function App() {
       if (syncBrowse) {
         const l = sortedLocal.find(x => x.name === e.name && x.isDir)
         if (l) navLocal(`${localDir}/${e.name}`)
-        else showNotice('同步浏览：本地侧没有同名目录')
+        else showNotice(t("synchronized_browsing_no_matching_local_directory"))
       }
     } else {
       enqueue('download', e.name, false)
@@ -318,28 +372,28 @@ export default function App() {
     // 后端命令与列目录走同一条 UiCmd 队列：必须 await 操作命令入队后再刷新，
     // 否则刷新可能先于 mkdir/rename/delete 执行，列表看不到结果（真实时序缺陷）。
     if (action === 'mkdir') {
-      askPrompt(which === 'local' ? '新建本地目录' : '新建远程目录', '', async (name) => {
+      askPrompt(which === 'local' ? t("new_local_folder") : t("new_remote_folder"), '', async (name) => {
         try {
           if (which === 'local') await api.mkdirLocal(`${localDir}/${name}`)
           else await api.mkdirRemote(remoteJoin(remoteDir, name))
-        } catch (e) { showNotice(`创建目录失败: ${e}`); return }
+        } catch (e) { showNotice(t("create_folder_failed_value", [e])); return }
         if (which === 'local') refreshLocal(); else refreshRemote()
       })
     } else if (action === 'rename' && sel) {
-      askPrompt('重命名', sel.name, async (name) => {
+      askPrompt(t("rename"), sel.name, async (name) => {
         try {
           if (which === 'local') await api.renameLocal(`${localDir}/${sel.name}`, `${localDir}/${name}`)
           else await api.renameRemote(remoteJoin(remoteDir, sel.name), remoteJoin(remoteDir, name))
-        } catch (e) { showNotice(`重命名失败: ${e}`); return }
+        } catch (e) { showNotice(t("rename_failed_value", [e])); return }
         if (which === 'local') refreshLocal(); else refreshRemote()
       })
     } else if (action === 'delete' && sel) {
-      if (uiPref.get('confirmDelete', true) && !window.confirm(`删除「${sel.name}」？`)) return
+      if (uiPref.get('confirmDelete', true) && !window.confirm(t("delete_value", [sel.name]))) return
       ;(async () => {
         try {
           if (which === 'local') { await api.deleteLocal([`${localDir}/${sel.name}`]); setLocalSel(null) }
           else { await api.deleteRemote([remoteJoin(remoteDir, sel.name)]); setRemoteSel(null) }
-        } catch (e) { showNotice(`删除失败: ${e}`); return }
+        } catch (e) { showNotice(t("delete_failed_value", [e])); return }
         if (which === 'local') refreshLocal(); else refreshRemote()
       })()
     } else if (action === 'transfer' && sel) {
@@ -377,20 +431,20 @@ export default function App() {
     setLocalMarks(lm)
     setRemoteMarks(rm)
     const diff = Object.values(lm).filter(m => m !== 'same').length + Object.values(rm).filter(m => m !== 'same').length
-    addLog(`比较完成：${diff} 处差异`)
-    showNotice(`比较完成：${diff} 处差异`)
+    addLog(t("comparison_complete_value_differences", [diff]))
+    showNotice(t("comparison_complete_value_differences", [diff]))
   }
 
   // ---- 传输 ----
   const enqueue = (direction, name, isDir) => {
-    if (!localDir) { showNotice('本地目录未就绪，无法传输'); return }
+    if (!localDir) { showNotice(t("local_directory_is_not_ready_for_transfer")); return }
     const remote = remoteJoin(remoteDir || '/', name)
     const local = `${localDir}/${name}`
     const id = nextId++
     setQueue(qs => [...qs, { id, direction, remote, local, size: 0, transferred: 0, status: 'waiting' }])
     setShowBottom(true)
     if (bottomTab === 'log') setBottomTab('queue')
-    addLog(`队列: ${direction === 'download' ? '下载' : '上传'} ${remote}`)
+    addLog(t("queue_value_value", [direction === 'download' ? t("download") : t("upload"), remote]))
     api.enqueue({ id, direction, remotePath: remote, localPath: local, isDir })
   }
 
@@ -401,9 +455,9 @@ export default function App() {
 
   const cancelWaiting = () => {
     const items = queue.filter(q => q.status === 'waiting')
-    if (!items.length) { showNotice('队列中没有等待的任务'); return }
+    if (!items.length) { showNotice(t("no_waiting_transfers_in_queue")); return }
     for (const q of items) api.cancelTransfer(q.id)
-    showNotice(`已请求取消 ${items.length} 个等待任务`)
+    showNotice(t("requested_cancellation_of_value_waiting_transfers", [items.length]))
   }
 
   const startRelay = ({ site, path }) => {
@@ -415,7 +469,7 @@ export default function App() {
     setShowBottom(true)
     if (bottomTab === 'log') setBottomTab('queue')
     setRelayOpen(false)
-    addLog(`互传: ${site.name}:${path} → ${currentSite?.host}:${remoteDir}`)
+    addLog(t("site_transfer_value_value_value_value", [site.name, path, currentSite?.host, remoteDir]))
     api.relay({
       id, srcSiteId: site.id, srcPath: path,
       dstPath: (remoteJoin(remoteDir || '/', '').replace(/\/+$/, '')) || '/',
@@ -425,7 +479,7 @@ export default function App() {
   // ---- 连接 ----
   const quickConnect = (fields) => {
     const f = fields || qc
-    if (!f.host.trim()) { showNotice('请输入服务器地址'); return }
+    if (!f.host.trim()) { showNotice(t("enter_a_server_address")); return }
     setQueue([])
     setCurrentSite({ host: f.host.trim(), port: Number(f.port) || 21 })
     api.quickConnect({
@@ -448,7 +502,7 @@ export default function App() {
       if (!await api.connectSite(s.id)) return
       setCurrentSite({ host: s.host, port: Number(s.port) || 21, name: s.name })
       applySiteLocalPath(s)
-    } catch (e) { showNotice(`连接失败：${e}`) }
+    } catch (e) { showNotice(t("connection_failed_value", [e])) }
   }
   useEffect(() => {
     if (!connectMenuOpen) return
@@ -461,21 +515,23 @@ export default function App() {
   useEffect(() => {
     ;(async () => {
       try {
+        await api.setLanguage(getLocale())
+        document.documentElement.lang = getLocale()
         await init()
         onEvent(handleEvent)
         const home = await api.homeDir()
         setHomePath(home)
         if (!bootLogged.current) {
           bootLogged.current = true
-          addLog('Rust Flash Ftp 已启动')
-          addLog('[L] FTP / FTPS / SFTP 已就绪')
-          addLog('[L] 连接模式: 被动 (PASV)')
-          addLog('[L] 文件名编码: 自动检测')
-          addLog('[L] 代理服务器: 未启用')
-          addLog(`[L] 本地浏览器: ${home}`)
-          addLog('[L] 队列窗口: 0 项')
-          addLog('[L] 传输队列: 串行，断点续传已启用')
-          addLog('[L] 状态: 空闲 — 等待连接')
+          addLog(t("rust_flash_ftp_started"))
+          addLog(t("l_ftp_ftps_sftp_ready"))
+          addLog(t("l_connection_mode_passive_pasv"))
+          addLog(t("l_filename_encoding_auto_detect"))
+          addLog(t("l_proxy_server_disabled"))
+          addLog(t("l_local_browser_value", [home]))
+          addLog(t("l_queue_window_0_items"))
+          addLog(t("l_transfer_queue_sequential_resume_enabled"))
+          addLog(t("l_status_idle_waiting_for_connection"))
         }
         const prefDir = uiPref.get('defaultLocalDir', '') || uiPref.get('localDir', '')
         if (prefDir) {
@@ -484,11 +540,11 @@ export default function App() {
           navLocal(home)
         }
       } catch (e) {
-        showNotice(`初始化失败: ${e}`)
+        showNotice(t("initialization_failed_value", [e]))
       }
     })()
-    const t = setInterval(() => setElapsed(v => v + 1), 1000)
-    return () => clearInterval(t)
+    const elapsedTimer = setInterval(() => setElapsed(v => v + 1), 1000)
+    return () => clearInterval(elapsedTimer)
   }, [])
 
   useEffect(() => { uiPref.set('startupTree', showTree) }, [showTree])
@@ -500,10 +556,13 @@ export default function App() {
   useEffect(() => { uiPref.set('qcHost', qc.host); uiPref.set('qcPort', qc.port); uiPref.set('qcUser', qc.user) }, [qc])
 
   useEffect(() => {
-    document.title = currentSite
-      ? `Rust Flash Ftp - [${currentSite.host}:${currentSite.port}]`
-      : 'Rust Flash Ftp'
-  }, [currentSite])
+    const siteLabel = currentSite?.name || (currentSite?.host
+      ? `${currentSite.host}${currentSite.port ? `:${currentSite.port}` : ''}`
+      : '')
+    const title = connected && siteLabel ? `${siteLabel} — Rust Flash Ftp` : 'Rust Flash Ftp'
+    document.title = title
+    api.setWindowTitle(title).catch(() => {})
+  }, [connected, currentSite])
 
   actionsRef.current = { quickConnect, enqueue, comparePanes, navLocal, paneAction, refreshLocal, refreshRemote, activateLocal, activateRemote, remoteUp, localUp }
 
@@ -513,7 +572,7 @@ export default function App() {
     const onKey = (e) => {
       const t = e.target
       const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
-      const dialogOpen = siteManagerOpen || proxyManagerOpen || relayOpen || aboutOpen || !!prompt
+      const dialogOpen = siteManagerOpen || proxyManagerOpen || relayOpen || optionsOpen || aboutOpen || !!prompt
       if (e.key === 'Escape') {
         if (dialogOpen) {
           setSiteManagerOpen(false); setProxyManagerOpen(false); setRelayOpen(false)
@@ -524,9 +583,10 @@ export default function App() {
       if (typing || dialogOpen || e.metaKey || e.ctrlKey || e.altKey) return
       const a = actionsRef.current
       switch (e.key) {
+        case 'F12': e.preventDefault(); api.newSession().catch(e => showNotice(errorMessage(e))); break
         case 'F4': e.preventDefault(); setSiteManagerOpen(true); break
         case 'F5': e.preventDefault(); a.refreshLocal(); a.refreshRemote(); break
-        case 'F6': e.preventDefault(); setProxyManagerOpen(true); break
+        case 'F6': e.preventDefault(); setOptionsOpen(true); break
         case 'F7': e.preventDefault(); a.paneAction('local', 'mkdir'); break
         case 'F8':
           e.preventDefault(); setShowQuick(true)
@@ -562,7 +622,7 @@ export default function App() {
           if (args[0] === 'relay') setRelayOpen(true)
           if (args[0] === 'about') setAboutOpen(true)
           if (args[0] === 'options') setOptionsOpen(true)
-          if (args[0] === 'prompt') askPrompt('新建本地目录', '', () => {})
+          if (args[0] === 'prompt') askPrompt(t("new_local_folder"), '', () => {})
           if (args[0] === 'queue') setShowBottom(true)
           break
         case 'close':
@@ -776,14 +836,14 @@ export default function App() {
       }
     }
     let last = ''
-    const t = setInterval(async () => {
+    const elapsedTimer = setInterval(async () => {
       try {
         const r = await fetch('http://127.0.0.1:5199/cmd', { cache: 'no-store' })
         const cmd = (await r.text()).trim()
         if (cmd && cmd !== last) { last = cmd; window.__fxDrive(cmd) }
       } catch {}
     }, 400)
-    return () => { clearInterval(t); delete window.__fxDrive }
+    return () => { clearInterval(elapsedTimer); delete window.__fxDrive }
   }, [])
 
   const activeCount = queue.filter(q => q.status === 'active').length
@@ -791,65 +851,57 @@ export default function App() {
   const doneCount = queue.filter(q => q.status === 'done').length
   const mmss = `${String(Math.floor(elapsed / 60)).padStart(2, '0')}:${String(elapsed % 60).padStart(2, '0')}`
 
-  // ---- 菜单（与原版 FlashFXP 一致） ----
+  // ---- 菜单：仅保留已实现的功能 ----
   const menus = [
-    { name: '会话(E)', items: [
-      { label: '快速连接…', key: 'F8', act: () => document.getElementById('qc-host')?.focus() },
-      { label: '连接到站点…', key: 'F4', act: () => setSiteManagerOpen(true) },
+    { name: t("session_e"), items: [
+      { label: t('new_session'), key: 'F12', act: () => api.newSession().catch(e => showNotice(errorMessage(e))) },
+      { label: t("quick_connect"), key: 'F8', act: () => document.getElementById('qc-host')?.focus() },
+      { label: t("connect_to_site"), key: 'F4', act: () => setSiteManagerOpen(true) },
       { sep: true },
-      { label: '断开(D)', act: () => api.disconnect(), disabled: !connected },
-      { label: '全部断开', act: () => api.disconnect(), disabled: !connected },
+      { label: t("disconnect_d"), act: () => api.disconnect(), disabled: !connected },
+      { label: t("disconnect_all"), act: () => api.disconnect(), disabled: !connected },
       { sep: true },
-      { label: '退出(X)', key: '⌘Q', act: () => api.appExit() },
+      { label: t("exit_x"), key: '⌘Q', act: () => api.appExit() },
     ]},
-    { name: '站点(S)', items: [
-      { label: '站点管理器…', key: 'F4', act: () => setSiteManagerOpen(true) },
-      { label: '站点互传(R)…', act: () => setRelayOpen(true), disabled: !connected },
+    { name: t("sites_s"), items: [
+      { label: t("site_manager"), key: 'F4', act: () => setSiteManagerOpen(true) },
+      { label: t("site_to_site_transfer_r"), act: () => setRelayOpen(true), disabled: !connected },
+    ]},
+    { name: t("options_o"), items: [
+      { label: t('language'), items: [
+        { label: '简体中文', checked: language === 'zh-CN', act: () => setLanguage('zh-CN') },
+        { label: 'English', checked: language === 'en', act: () => setLanguage('en') },
+      ] },
+      { label: t("preferences"), key: 'F6', act: () => setOptionsOpen(true) },
+      { label: t("proxy_settings_p"), act: () => setProxyManagerOpen(true) },
+    ]},
+    { name: t("queue_z"), items: [
+      { label: t("show_hide_queue_and_log"), act: () => setShowBottom(v => !v) },
+      { label: t("resume_pending"), act: resumeRestored },
+      { label: t("cancel_waiting_transfers"), act: cancelWaiting },
+      { label: t("clear_completed"), act: clearFinished },
+    ]},
+    { name: t("tools_t"), items: [
+      { label: t("compare_folders"), act: comparePanes, disabled: !connected },
+      { label: t("clear_comparison_marks"), act: () => { setLocalMarks({}); setRemoteMarks({}) } },
       { sep: true },
-      { label: '导入站点…', act: () => showNotice('请使用站点管理器管理站点') },
-      { label: '导出站点…', act: () => showNotice('请使用站点管理器管理站点') },
+      { label: t("synchronized_browsing"), checked: syncBrowse, act: () => setSyncBrowse(v => !v) },
     ]},
-    { name: '选项(O)', items: [
-      { label: '参数选择…', key: 'F6', act: () => setOptionsOpen(true) },
-      { label: '代理设置(P)…', act: () => setProxyManagerOpen(true) },
+    { name: t("directory_d"), items: [
+      { label: t("new_folder"), key: 'F7', act: () => paneAction('local', 'mkdir') },
+      { label: t("rename_2"), act: () => paneAction('local', 'rename') },
+      { label: t("delete"), key: 'Del', act: () => paneAction('local', 'delete') },
       { sep: true },
-      { label: '保存窗口位置', act: () => showNotice('窗口位置已自动保存') },
+      { label: t("refresh_f5"), key: 'F5', act: () => { refreshLocal(); refreshRemote() } },
     ]},
-    { name: '队列(Z)', items: [
-      { label: '显示/隐藏 队列与日志', act: () => setShowBottom(v => !v) },
-      { label: '恢复待传', act: resumeRestored },
-      { label: '取消等待任务', act: cancelWaiting },
-      { label: '清空已完成', act: clearFinished },
+    { name: t("view_v"), items: [
+      { label: t("directory_tree"), checked: showTree, act: () => setShowTree(v => !v) },
+      { label: t("queue_and_log_windows"), checked: showBottom, act: () => setShowBottom(v => !v) },
+      { label: t("quick_connect_bar"), checked: showQuick, act: () => setShowQuick(v => !v) },
+      { label: t("header_status_bar"), checked: showHeader, act: () => setShowHeader(v => !v) },
     ]},
-    { name: '命令(C)', items: [
-      { label: '编辑命令…', act: () => { setBottomTab('log'); setShowBottom(true) } },
-      { label: '查看原始命令', act: () => { setBottomTab('log'); setShowBottom(true) } },
-      { sep: true },
-      { label: '计算已使用空间', act: () => { refreshLocal(); showNotice('已刷新目录') } },
-    ]},
-    { name: '工具(T)', items: [
-      { label: '比较文件夹', act: comparePanes, disabled: !connected },
-      { label: '清除比较标记', act: () => { setLocalMarks({}); setRemoteMarks({}) } },
-      { sep: true },
-      { label: '同步浏览', checked: syncBrowse, act: () => setSyncBrowse(v => !v) },
-    ]},
-    { name: '目录(D)', items: [
-      { label: '新建目录…', key: 'F7', act: () => paneAction('local', 'mkdir') },
-      { label: '重命名…', act: () => paneAction('local', 'rename') },
-      { label: '删除', key: 'Del', act: () => paneAction('local', 'delete') },
-      { sep: true },
-      { label: '刷新(F5)', key: 'F5', act: () => { refreshLocal(); refreshRemote() } },
-    ]},
-    { name: '查看(V)', items: [
-      { label: '目录树', checked: showTree, act: () => setShowTree(v => !v) },
-      { label: '队列与日志窗口', checked: showBottom, act: () => setShowBottom(v => !v) },
-      { label: '快速连接栏', checked: showQuick, act: () => setShowQuick(v => !v) },
-      { label: '头部状态栏', checked: showHeader, act: () => setShowHeader(v => !v) },
-      { sep: true },
-      { label: '并排显示队列与日志', checked: bottomTab === 'both', act: () => setBottomTab('both') },
-    ]},
-    { name: '帮助(H)', items: [
-      { label: '关于 Rust Flash Ftp…', act: () => setAboutOpen(true) },
+    { name: t("help_h"), items: [
+      { label: t("about_rust_flash_ftp"), act: () => setAboutOpen(true) },
     ]},
   ]
 
@@ -864,57 +916,50 @@ export default function App() {
 
       {/* ===== 头部状态栏：会话状态 + 各功能入口（查看 > 头部状态栏 可显隐） ===== */}
       {showHeader && <div className="fx-headerbar">
-        <button className="fx-header-cell" title="站点管理器" onClick={() => setSiteManagerOpen(true)}>
+        <button className="fx-header-cell" title={t("site_manager_2")} onClick={() => setSiteManagerOpen(true)}>
           <Ico name={connected ? 'connected' : 'miniComputer'} size={14} />
           {connected
-            ? `${currentSite ? (currentSite.name || `${currentSite.host}:${currentSite.port}`) : '已连接'}${currentSite && currentSite.user ? `（${currentSite.user}）` : ''}`
-            : '未连接 — 点击选择站点'}
+            ? `${currentSite ? (currentSite.name || `${currentSite.host}:${currentSite.port}`) : t("connected")}${currentSite && currentSite.user ? `（${currentSite.user}）` : ''}`
+            : t("disconnected_click_to_select_a_site")}
         </button>
-        <button className="fx-header-cell" title="代理管理器" onClick={() => setProxyManagerOpen(true)}>
-          <Ico name="globe" size={14} /> 代理
-        </button>
-        <button className="fx-header-cell" title="站点互传" disabled={!connected} onClick={() => setRelayOpen(true)}>
-          <Ico name="folderTransfer" size={14} /> 互传
-        </button>
+        <button className="fx-header-cell" title={t("proxy_manager")} onClick={() => setProxyManagerOpen(true)}>
+          <Ico name="globe" size={14} /> {t("proxy")} </button>
+        <button className="fx-header-cell" title={t("site_to_site_transfer")} disabled={!connected} onClick={() => setRelayOpen(true)}>
+          <Ico name="folderTransfer" size={14} /> {t("site_transfer")} </button>
         <div className="fx-header-spacer" />
-        <button className="fx-header-cell" title="打开队列窗口"
+        <button className="fx-header-cell" title={t("open_queue_window")}
                 onClick={() => { setShowBottom(true); setBottomTab('queue') }}>
-          <Ico name="playDrop" size={14} /> 队列 {activeCount} 活动 / {waitingCount} 等待
-        </button>
-        <button className="fx-header-cell" title="打开日志窗口"
-                onClick={() => { setShowBottom(true); setBottomTab('log') }}>
-          日志
-        </button>
-        <button className="fx-header-cell" title="参数选择" onClick={() => setOptionsOpen(true)}>
-          选项
-        </button>
+          <Ico name="playDrop" size={14} /> {t("queue")} {formatNumber(activeCount)} {t("active")} {formatNumber(waitingCount)} {t("waiting")} </button>
+        <button className="fx-header-cell" title={t("open_log_window")}
+                onClick={() => { setShowBottom(true); setBottomTab('log') }}> {t("log")} </button>
+        <button className="fx-header-cell" title={t("preferences_2")} onClick={() => setOptionsOpen(true)}> {t("options")} </button>
       </div>}
 
       {/* ===== 工具栏（左：本地浏览器 / 右：连接与传输） ===== */}
       <div className="fx-toolbar">
-        <span className="fx-tool-caption">本地浏览器</span>
+        <span className="fx-tool-caption">{t("local_browser")}</span>
         <div className="fx-tool-group">
-          <WinToolButton icon="pause" size={28} title="清空已完成队列" onClick={clearFinished} />
-          <WinToolButton icon="playDrop" size={28} title="恢复待传任务" onClick={resumeRestored} />
-          <WinToolButton icon="greenRefreshDoc" size={31} title="比较文件夹" disabled={!connected} onClick={comparePanes} />
-          <WinToolButton icon="blueRefresh" size={31} title="同步浏览（开/关）" pressed={syncBrowse}
+          <WinToolButton icon="pause" size={28} title={t("clear_completed_transfers")} onClick={clearFinished} />
+          <WinToolButton icon="playDrop" size={28} title={t("resume_pending_transfers")} onClick={resumeRestored} />
+          <WinToolButton icon="greenRefreshDoc" size={31} title={t("compare_folders")} disabled={!connected} onClick={comparePanes} />
+          <WinToolButton icon="blueRefresh" size={31} title={t("synchronized_browsing_on_off")} pressed={syncBrowse}
                          onClick={() => setSyncBrowse(v => !v)} />
-          <WinToolButton icon="home" size={33} title="本地主目录" onClick={() => homePath && navLocal(homePath)} />
+          <WinToolButton icon="home" size={33} title={t("local_home_directory")} onClick={() => homePath && navLocal(homePath)} />
         </div>
         <div className="fx-tool-spacer" />
         <div className="fx-tool-group right">
           <div className="fx-tool-connect">
-            <WinToolButton icon="connect" size={35} big title="连接（快速连接 / 站点）"
+            <WinToolButton icon="connect" size={35} big title={t("connect_quick_connect_site")}
                            pressed={connectMenuOpen} onClick={toggleConnectMenu} />
             {connectMenuOpen && (
               <div className="fx-menu-popup fx-connect-menu" style={{ top: '100%', right: 0 }}>
                 <button className="fx-menu-row" onClick={() => { setConnectMenuOpen(false); document.getElementById('qc-host')?.focus() }}>
                   <span className="fx-menu-check" />
-                  <span className="fx-menu-label">快速连接…</span>
+                  <span className="fx-menu-label">{t("quick_connect")}</span>
                 </button>
                 <button className="fx-menu-row" onClick={() => { setConnectMenuOpen(false); setSiteManagerOpen(true) }}>
                   <span className="fx-menu-check" />
-                  <span className="fx-menu-label">站点管理器…</span>
+                  <span className="fx-menu-label">{t("site_manager")}</span>
                 </button>
                 {connectSites.length > 0 && <div className="fx-menu-sep" />}
                 {connectSites.map(s => (
@@ -927,54 +972,52 @@ export default function App() {
               </div>
             )}
           </div>
-          <WinToolButton icon="disconnect" size={35} big title="断开连接" disabled={!connected}
+          <WinToolButton icon="disconnect" size={35} big title={t("disconnect")} disabled={!connected}
                          onClick={() => api.disconnect()} />
-          <WinToolButton icon="cancel" size={33} big title="取消等待任务" onClick={cancelWaiting} />
-          <WinToolButton icon="pauseBig" size={33} big title="暂停队列（取消等待任务）" onClick={cancelWaiting} />
-          <WinToolButton icon="playBig" size={33} big title="开始传输 / 恢复待传" onClick={resumeRestored} />
-          <WinToolButton icon="folderTransfer" size={33} big title="站点互传 / 文件夹操作" disabled={!connected}
+          <WinToolButton icon="cancel" size={33} big title={t("cancel_waiting_transfers")} onClick={cancelWaiting} />
+          <WinToolButton icon="playBig" size={33} big title={t("resume_pending_transfers")} onClick={resumeRestored} />
+          <WinToolButton icon="folderTransfer" size={33} big title={t("site_to_site_transfer")} disabled={!connected}
                          onClick={() => setRelayOpen(true)} />
-          <WinToolButton icon="blueRefresh" size={34} big title="刷新双栏"
+          <WinToolButton icon="blueRefresh" size={34} big title={t("refresh_both_panes")}
                          onClick={() => { refreshLocal(); refreshRemote() }} />
-          <WinToolButton icon="globe" size={34} big title="站点管理器" onClick={() => setSiteManagerOpen(true)} />
+          <WinToolButton icon="globe" size={34} big title={t("site_manager_2")} onClick={() => setSiteManagerOpen(true)} />
         </div>
       </div>
 
       {/* ===== 快速连接栏（查看 > 快速连接栏 可显隐） ===== */}
       {showQuick && <div className="fx-quickbar">
-        <span className="fx-q-label">快速连接:</span>
-        <span className="fx-q-field">服务器或 URL:</span>
+        <span className="fx-q-label">{t("quick_connect_2")}</span>
+        <span className="fx-q-field">{t("server_or_url")}</span>
         <WinInput id="qc-host" style={{ flex: '1.6', minWidth: 90 }} placeholder="ftp.example.com"
                   value={qc.host} onChange={(e) => setQc({ ...qc, host: e.target.value })}
                   onKeyDown={(e) => e.key === 'Enter' && quickConnect()} />
-        <span className="fx-q-field">端口:</span>
+        <span className="fx-q-field">{t("port")}</span>
         <WinInput style={{ width: 50 }} value={qc.port}
                   onChange={(e) => setQc({ ...qc, port: e.target.value.replace(/\D/g, '') })} />
-        <span className="fx-q-field">用户名称:</span>
+        <span className="fx-q-field">{t("username")}</span>
         <WinInput style={{ width: 120 }} placeholder="anonymous" value={qc.user}
                   onChange={(e) => setQc({ ...qc, user: e.target.value })} />
-        <span className="fx-q-field">密码:</span>
+        <span className="fx-q-field">{t("password")}</span>
         <WinInput style={{ width: 100 }} type="password" value={qc.pass}
                   onChange={(e) => setQc({ ...qc, pass: e.target.value })} />
         <WinButton compact onClick={quickConnect} disabled={!qc.host.trim()}>
-          <Ico name="app" size={13} /> 连接
-        </WinButton>
+          <Ico name="app" size={13} /> {t("connect")} </WinButton>
         <span className="fx-tool-sep" />
-        <WinCheck checked={syncBrowse} onChange={setSyncBrowse} label="同步浏览" />
+        <WinCheck checked={syncBrowse} onChange={setSyncBrowse} label={t("synchronized_browsing")} />
       </div>}
 
       {/* ===== 地址栏（左：本地 / 右：远程） ===== */}
       <div className="fx-address-row" style={{ gridTemplateColumns: gridCols }}>
         <div className="fx-address-cell left" style={{ gridColumn: leftCol }}>
-          <IconTip title="站点管理器"><button className="fx-address-icon" onClick={() => setSiteManagerOpen(true)}><Ico name="miniComputer" size={17} /></button></IconTip>
-          <IconTip title="快速连接"><button className="fx-address-icon" onClick={() => document.getElementById('qc-host')?.focus()}><Ico name="star" size={17} /></button></IconTip>
-          <IconTip title="上级目录"><button className="fx-address-icon" onClick={localUp}><Ico name="greenUp" size={17} /></button></IconTip>
+          <IconTip title={t("site_manager_2")}><button className="fx-address-icon" onClick={() => setSiteManagerOpen(true)}><Ico name="miniComputer" size={17} /></button></IconTip>
+          <IconTip title={t("quick_connect_3")}><button className="fx-address-icon" onClick={() => document.getElementById('qc-host')?.focus()}><Ico name="star" size={17} /></button></IconTip>
+          <IconTip title={t("parent_directory")}><button className="fx-address-icon" onClick={localUp}><Ico name="greenUp" size={17} /></button></IconTip>
           <AddressCombo value={localDir} onGo={navLocal} history={localHistory} />
         </div>
         <div className="fx-address-cell right" style={{ gridColumn: rightCol }}>
-          <IconTip title="站点管理器"><button className="fx-address-icon" onClick={() => setSiteManagerOpen(true)}><Ico name="miniComputer" size={17} /></button></IconTip>
-          <IconTip title="远程主目录"><button className="fx-address-icon" onClick={() => api.remoteList('/')}><Ico name="star" size={17} /></button></IconTip>
-          <IconTip title="上级目录"><button className="fx-address-icon" onClick={remoteUp}><Ico name="greenUp" size={17} /></button></IconTip>
+          <IconTip title={t("site_manager_2")}><button className="fx-address-icon" onClick={() => setSiteManagerOpen(true)}><Ico name="miniComputer" size={17} /></button></IconTip>
+          <IconTip title={t("remote_home_directory")}><button className="fx-address-icon" onClick={() => api.remoteList('/')}><Ico name="star" size={17} /></button></IconTip>
+          <IconTip title={t("parent_directory")}><button className="fx-address-icon" onClick={remoteUp}><Ico name="greenUp" size={17} /></button></IconTip>
           <AddressCombo value={remoteDir || ''} onGo={(p) => api.remoteList(p)} disabled={!connected} history={remoteHistory} />
         </div>
       </div>
@@ -983,7 +1026,7 @@ export default function App() {
       <div className="fx-main" style={{ gridTemplateColumns: gridCols }}>
         {showTree && homePath && <DirTree home={homePath} onNavigate={navLocal}
           currentPath={localDir} onContextMenu={ctxMenu.openMenu} />}
-        <FilePane pane="local" title="本地浏览器" entries={sortedLocal} selected={localSel}
+        <FilePane pane="local" title={t("local_browser")} entries={sortedLocal} selected={localSel}
           marks={localMarks} address={localDir} connected={connected} diskFree={diskFree}
           sort={sortLocal} onNavigate={localUp} onRefresh={refreshLocal}
           onSelect={(i) => { setLocalSel(i); setActivePane('local') }}
@@ -991,7 +1034,7 @@ export default function App() {
           onAddressGo={navLocal} onHome={() => navLocal(homePath)}
           onContextMenu={ctxMenu.openMenu}
           onDropTransfer={(dir, name, isDir) => enqueue(dir, name, isDir)} />
-        <FilePane pane="remote" title="远程浏览器"
+        <FilePane pane="remote" title={t("remote_browser")}
           entries={sortedRemote} selected={remoteSel}
           marks={remoteMarks} address={remoteDir || ''} connected={connected && !!remoteDir}
           host={currentSite ? `${currentSite.host}` : ''} sort={sortRemote}
@@ -1005,39 +1048,39 @@ export default function App() {
 
       {/* ===== 底部：队列窗口 / 日志窗口 ===== */}
       {showBottom && (
-        <div className="fx-bottom">
+        <div className="fx-bottom" style={{ height: bottomHeight, maxHeight: '60vh' }}>
+          <div className="fx-splitter fx-splitter-horizontal" {...splitterProps('height')} />
           <div className="fx-bottom-tabs">
             <button className={`fx-tab ${bottomTab === 'queue' ? 'fx-active' : ''}`}
-                    onClick={() => setBottomTab('queue')}>队列窗口</button>
+                    onClick={() => setBottomTab('queue')}>{t("queue_window")}</button>
             <button className={`fx-tab ${bottomTab === 'log' ? 'fx-active' : ''}`}
-                    onClick={() => setBottomTab('log')}>日志窗口</button>
+                    onClick={() => setBottomTab('log')}>{t("log_window")}</button>
             <button className={`fx-tab ${bottomTab === 'both' ? 'fx-active' : ''}`}
-                    onClick={() => setBottomTab('both')} title="并排显示队列与日志">并排</button>
+                    onClick={() => setBottomTab('both')} title={t("show_queue_and_log_side_by_side")}>{t("side_by_side")}</button>
             <div className="fx-bottom-tools">
               {queue.some(q => q.restored && q.status === 'waiting') && (
-                <WinButton compact onClick={resumeRestored}>▶ 恢复待传</WinButton>
+                <WinButton compact onClick={resumeRestored}>{t("resume_pending_2")}</WinButton>
               )}
-              <WinButton compact onClick={clearFinished} disabled={!queue.length}>清空已完成</WinButton>
-              <span className="fx-hint">
-                传输 {activeCount} · 等待 {waitingCount} · 完成 {doneCount}
+              <WinButton compact onClick={clearFinished} disabled={!queue.length}>{t("clear_completed")}</WinButton>
+              <span className="fx-hint"> {t("transfers")} {formatNumber(activeCount)} {t("waiting_2")} {formatNumber(waitingCount)} {t("completed")} {formatNumber(doneCount)}
               </span>
             </div>
           </div>
           <div className="fx-bottom-body">
             {bottomTab !== 'log' && (
               <div className={`fx-queue fx-scroll ${bottomTab === 'queue' ? '' : ''}`}
-                   style={{ flex: bottomTab === 'both' ? '0 0 73%' : '1 1 100%', borderRight: bottomTab === 'both' ? undefined : 0 }}>
+                   style={{ flex: bottomTab === 'both' ? `0 0 calc(${queueWidth}% - 3px)` : '1 1 100%', borderRight: bottomTab === 'both' ? undefined : 0 }}>
                 <table className="fx-list listview" style={{ tableLayout: 'fixed' }}>
                     <colgroup><col style={{ width: '26%' }} /><col style={{ width: '28%' }} /><col style={{ width: '12%' }} /><col /></colgroup>
                     <thead><tr>
-                      <th>名称</th><th>目标</th><th className="fx-th-right">大小</th><th>备注</th>
+                      <th>{t("name")}</th><th>{t("destination")}</th><th className="fx-th-right">{t("size")}</th><th>{t("notes")}</th>
                     </tr></thead>
                     <tbody>
                       {queue.map((q, i) => (
                         <tr key={q.id} onContextMenu={(e) => ctxMenu.openMenu(e, [
-                          { label: '取消该任务', disabled: q.status !== 'waiting', act: () => api.cancelTransfer(q.id) },
+                          { label: t("cancel_transfer"), disabled: q.status !== 'waiting', act: () => api.cancelTransfer(q.id) },
                           { sep: true },
-                          { label: '复制名称', act: () => navigator.clipboard?.writeText(q.remote) },
+                          { label: t("copy_name"), act: () => navigator.clipboard?.writeText(q.remote) },
                         ])}>
                           <td title={(q.direction === 'upload' ? q.local : q.remote)}>
                             {(q.direction === 'upload' ? q.local : q.remote).split('/').pop()}
@@ -1050,9 +1093,9 @@ export default function App() {
                             <div className="fx-note">
                               {q.status === 'active' && <div className="fx-progress"><i style={{ width: `${q.size ? Math.min(100, q.transferred / q.size * 100) : 0}%` }} /></div>}
                               <span style={{ color: q.status === 'failed' ? '#c00000' : q.status === 'done' ? '#008000' : '#303030' }}>
-                                {q.status === 'waiting' ? (q.restored ? '等待恢复' : '等待') : q.status === 'active' ? '传输中' : q.status === 'done' ? '完成' : (q.error === '已取消' ? '已取消' : '失败')}
+                                {q.status === 'waiting' ? (q.restored ? t("awaiting_resume") : t("waiting")) : q.status === 'active' ? t("transferring") : q.status === 'done' ? t("completed_2") : (q.cancelled ? t("cancelled") : t("failed"))}
                               </span>
-                              {q.status === 'waiting' && <button className="x" title="取消该任务" onClick={() => api.cancelTransfer(q.id)}>✕</button>}
+                              {q.status === 'waiting' && <button className="x" title={t("cancel_transfer")} onClick={() => api.cancelTransfer(q.id)}>✕</button>}
                             </div>
                           </td>
                         </tr>
@@ -1061,16 +1104,17 @@ export default function App() {
                 </table>
               </div>
             )}
+            {bottomTab === 'both' && <div className="fx-splitter fx-splitter-vertical" {...splitterProps('width')} />}
             {bottomTab !== 'queue' && (
               <div className="fx-log fx-scroll" style={{ flex: 1 }}>
                 {log.length ? log.map((l, i) => {
-                  const m = l.match(/^(\[[^\]]+\])\s*(.*)$/)
+                  const m = l.text.match(/^(\[[^\]]+\])\s*(.*)$/)
                   return (
                     <div className="fx-log-line" key={i}>
-                      {m ? <><span className="fx-log-ts">{m[1]}</span> <LogBody text={m[2]} /></> : <LogBody text={l} />}
+                      {m ? <><span className="fx-log-ts">{m[1]}</span> <LogBody text={m[2]} level={l.level} /></> : <LogBody text={l.text} level={l.level} />}
                     </div>
                   )
-                }) : <div className="fx-log-line fx-log-info">[就绪] Rust Flash Ftp 已启动，等待连接…</div>}
+                }) : <div className="fx-log-line fx-log-info">{t("ready_rust_flash_ftp_started_waiting_for_connection")}</div>}
               </div>
             )}
           </div>
@@ -1080,16 +1124,14 @@ export default function App() {
       {/* ===== 状态栏 ===== */}
       <div className="fx-statusbar">
         <div className="fx-status-cell" style={{ width: 130 }}>
-          <Ico name="statusPc" size={13} /> {connected ? '已连接' : '空闲'} ({mmss})
+          <Ico name="statusPc" size={13} /> {connected ? t("connected") : t("idle")} ({mmss})
         </div>
         <div className="fx-status-cell grow">
           {notice || (connected
             ? `${currentSite ? `${currentSite.host}:${currentSite.port}` : ''} — ${remoteDir || '/'}`
-            : `本地浏览器 — ${localDir || ''}`)}
+            : t("local_browser_value", [localDir || '']))}
         </div>
-        <div className="fx-status-cell" style={{ width: 168 }}>
-          队列 {activeCount} 活动 / {waitingCount} 等待
-        </div>
+        <div className="fx-status-cell" style={{ width: language === 'en' ? 210 : 168 }}> {t("queue")} {formatNumber(activeCount)} {t("active")} {formatNumber(waitingCount)} {t("waiting")} </div>
         <div className="fx-status-cell" style={{ width: 74 }}>Flash Ftp</div>
       </div>
 
@@ -1105,27 +1147,24 @@ export default function App() {
       <RelayDialog open={relayOpen} onOpenChange={setRelayOpen}
         currentSite={currentSite} remoteDir={remoteDir} onStart={startRelay} />
 
-      <WinDialog open={aboutOpen} title="关于 Rust Flash Ftp" width={380} onClose={() => setAboutOpen(false)}
-        footer={<WinButton onClick={() => setAboutOpen(false)}>确定</WinButton>}>
+      <WinDialog open={aboutOpen} title={t("about_rust_flash_ftp_2")} width={380} onClose={() => setAboutOpen(false)}
+        footer={<WinButton onClick={() => setAboutOpen(false)}>{t("ok")}</WinButton>}>
         <div className="fx-about-logo">
           <AppLogo size={48} />
           <div>
             <h2>Rust Flash Ftp</h2>
-            <p>版本 0.1 (Rust 复刻版)<br />FTP / FTPS / SFTP 客户端<br />Rust (Tauri 2) + React</p>
+            <p>{t("version_0_1_rust_edition")}<br />{t("ftp_ftps_sftp_client")}<br />Rust (Tauri 2) + React</p>
           </div>
         </div>
-        <WinFieldset legend="功能">
-          <div className="fx-hint">
-            FTP / FTPS / SFTP、站点管理、代理、双栏浏览、断点续传、<br />
-            队列持久化、同步浏览、目录比较、站点互传。
-          </div>
+        <WinFieldset legend={t("features")}>
+          <div className="fx-hint"> {t("ftp_ftps_sftp_site_management_proxies_dual_panes_transfer_resume")}<br /> {t("persistent_queue_synchronized_browsing_directory_comparison_site_transfers")} </div>
         </WinFieldset>
       </WinDialog>
 
       <WinDialog open={!!prompt} title={prompt?.title || ''} width={330} onClose={() => setPrompt(null)}
         footer={<>
-          <WinButton variant="outline" onClick={() => setPrompt(null)}>取消</WinButton>
-          <WinButton onClick={() => { if (prompt) { prompt.apply(prompt.value); setPrompt(null) } }}>确定</WinButton>
+          <WinButton variant="outline" onClick={() => setPrompt(null)}>{t("cancel")}</WinButton>
+          <WinButton onClick={() => { if (prompt) { prompt.apply(prompt.value); setPrompt(null) } }}>{t("ok")}</WinButton>
         </>}>
         <WinInput autoFocus style={{ width: '100%' }} value={prompt?.value || ''}
           onChange={(e) => setPrompt(p => ({ ...p, value: e.target.value }))}

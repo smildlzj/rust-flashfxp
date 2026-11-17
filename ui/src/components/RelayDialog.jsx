@@ -1,3 +1,4 @@
+import { t } from '../i18n.js'
 import React, { useEffect, useState } from 'react'
 import { api } from '../api.js'
 import { WinButton, WinInput, WinCombo, WinFieldset, WinDialog } from '../win32.jsx'
@@ -19,32 +20,30 @@ export default function RelayDialog({ open, onOpenChange, currentSite, remoteDir
   }
 
   return (
-    <WinDialog open={open} title="站点互传" width={470} onClose={close}
+    <WinDialog open={open} title={t("site_to_site_transfer")} width={470} onClose={close}
       footer={<>
-        <WinButton variant="outline" onClick={close}>取消</WinButton>
-        <WinButton onClick={start} disabled={!ready}>开始互传</WinButton>
+        <WinButton variant="outline" onClick={close}>{t("cancel")}</WinButton>
+        <WinButton onClick={start} disabled={!ready}>{t("start_transfer")}</WinButton>
       </>}>
-      <WinFieldset legend="源站点">
+      <WinFieldset legend={t("source_site")}>
         <div className="fx-form-grid">
-          <label>站点:</label>
+          <label>{t("site")}</label>
           <WinCombo value={srcSiteId} onChange={setSrcSiteId}
-                    options={[{ value: '', label: '（选择站点）' },
+                    options={[{ value: '', label: t("select_a_site") },
                       ...sites.map(s => ({ value: String(s.id), label: `${s.name} (${s.host}:${s.port})` }))]} />
-          <label>源路径:</label>
+          <label>{t("source_path")}</label>
           <WinInput value={srcPath} onChange={(e) => setSrcPath(e.target.value)} placeholder="/tmp" />
         </div>
       </WinFieldset>
-      <WinFieldset legend="目标站点">
+      <WinFieldset legend={t("destination_site")}>
         <div className="fx-form-grid">
-          <label>站点:</label>
-          <div className="fx-hint" style={{ color: '#000' }}>{currentSite ? `${currentSite.host}:${currentSite.port}` : '（未连接）'}</div>
-          <label>目标路径:</label>
+          <label>{t("site")}</label>
+          <div className="fx-hint" style={{ color: '#000' }}>{currentSite ? `${currentSite.host}:${currentSite.port}` : t("not_connected")}</div>
+          <label>{t("destination_path")}</label>
           <div className="fx-hint" style={{ color: '#000' }}>{remoteDir || '/'}</div>
         </div>
       </WinFieldset>
-      <div className="fx-hint">
-        数据在内存中从源站点直转目标站点（8×256KB 缓冲流水线），不落盘。目录将递归复制。
-      </div>
+      <div className="fx-hint"> {t("data_streams_through_memory_from_the_source_to_the_destination_8_256kb_pipeline_without_writing_to_disk_folders_are_copied_recursively")} </div>
     </WinDialog>
   )
 }

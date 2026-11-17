@@ -483,7 +483,7 @@ input, textarea, [data-user-select="text"], .fx-select-text { -webkit-user-selec
 .fx-stat-sub { text-align: right; padding: 0 8px; color: var(--foreground); }
 
 /* ---------- 底部队列 / 日志 ---------- */
-.fx-bottom { flex: none; display: flex; flex-direction: column; background: var(--background); border-top: 1px solid var(--border); }
+.fx-bottom { position: relative; flex: none; display: flex; flex-direction: column; background: var(--background); border-top: 1px solid var(--border); }
 .fx-bottom-tabs {
   height: 38px; flex: none; display: flex; align-items: flex-end;
   gap: 4px; padding: 0 8px;
@@ -661,3 +661,13 @@ input, textarea, [data-user-select="text"], .fx-select-text { -webkit-user-selec
   .fx-site-general { grid-template-columns: minmax(0, 1fr); gap: 6px; }
   .fx-site-general > label { margin-top: 4px; }
 }
+
+/* 分割线使用指针捕获，拖出手柄后仍可连续调整。 */
+.fx-splitter { flex: none; touch-action: none; user-select: none; background: var(--border); }
+.fx-splitter:hover, .fx-splitter:active { background: var(--ring); }
+.fx-splitter-horizontal { position: absolute; top: -3px; left: 0; right: 0; height: 6px; cursor: row-resize; z-index: 2; }
+.fx-splitter-vertical { width: 6px; cursor: col-resize; }
+
+.fx-menu-item { position: relative; }
+.fx-menu-submenu { top: -6px; left: calc(100% - 2px); }
+.fx-menu-row:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; background: var(--muted); }

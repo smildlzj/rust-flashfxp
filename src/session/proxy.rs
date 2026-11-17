@@ -11,11 +11,11 @@ pub async fn dial_via_proxy(
 ) -> Result<async_std::net::TcpStream, String> {
     let stream = async_std::net::TcpStream::connect((proxy.host.as_str(), proxy.port))
         .await
-        .map_err(|e| format!("连接代理 {}:{} 失败: {e}", proxy.host, proxy.port))?;
+        .map_err(|e| crate::localized!("连接代理 {}:{} 失败: {e}", "Failed to connect to proxy {}:{}: {e}", proxy.host, proxy.port))?;
     match proxy.kind.as_str() {
         "socks5" => socks5_handshake(stream, proxy, target_host, target_port).await,
         "http" => http_connect(stream, proxy, target_host, target_port).await,
-        other => Err(format!("不支持的代理类型: {other}")),
+        other => Err(crate::localized!("不支持的代理类型: {other}", "Unsupported proxy type: {other}")),
     }
 }
 
@@ -29,14 +29,14 @@ async fn socks5_handshake(
     stream
         .write_all(if has_auth { &[0x05, 0x02, 0x00, 0x02] } else { &[0x05, 0x01, 0x00] })
         .await
-        .map_err(|e| format!("代理握手失败: {e}"))?;
+        .map_err(|e| crate::localized!("代理握手失败: {e}", "Proxy handshake failed: {e}"))?;
     let mut b = [0u8; 2];
     stream
         .read_exact(&mut b)
         .await
-        .map_err(|e| format!("代理握手失败: {e}"))?;
+        .map_err(|e| crate::localized!("代理握手失败: {e}", "Proxy handshake failed: {e}"))?;
     if b[0] != 0x05 {
-        return Err("代理协议版本不符".into());
+        return Err(crate::localized!("代理协议版本不符", "Proxy protocol version mismatch"));
     }
     match b[1] {
         0x00 => {}
@@ -50,22 +50,22 @@ async fn socks5_handshake(
             stream
                 .write_all(&auth)
                 .await
-                .map_err(|e| format!("代理认证失败: {e}"))?;
+                .map_err(|e| crate::localized!("代理认证失败: {e}", "Proxy authentication failed: {e}"))?;
             let mut r = [0u8; 2];
             stream
                 .read_exact(&mut r)
                 .await
-                .map_err(|e| format!("代理认证失败: {e}"))?;
+                .map_err(|e| crate::localized!("代理认证失败: {e}", "Proxy authentication failed: {e}"))?;
             if r[1] != 0x00 {
-                return Err("代理认证被拒绝".into());
+                return Err(crate::localized!("代理认证被拒绝", "Proxy authentication rejected"));
             }
         }
-        other => return Err(format!("代理要求不支持的认证方式: {other}")),
+        other => return Err(crate::localized!("代理要求不支持的认证方式: {other}", "Proxy requires an unsupported authentication method: {other}")),
     }
     // CONNECT 请求（域名形式，远端 DNS）
     let host_bytes = target_host.as_bytes();
     if host_bytes.is_empty() || host_bytes.len() > 255 {
-        return Err("目标主机名非法".into());
+        return Err(crate::localized!("目标主机名非法", "Invalid destination hostname"));
     }
     let mut req = vec![0x05, 0x01, 0x00, 0x03, host_bytes.len() as u8];
     req.extend_from_slice(host_bytes);
@@ -73,14 +73,14 @@ async fn socks5_handshake(
     stream
         .write_all(&req)
         .await
-        .map_err(|e| format!("发送代理请求失败: {e}"))?;
+        .map_err(|e| crate::localized!("发送代理请求失败: {e}", "Failed to send proxy request: {e}"))?;
     let mut head = [0u8; 4];
     stream
         .read_exact(&mut head)
         .await
-        .map_err(|e| format!("代理响应失败: {e}"))?;
+        .map_err(|e| crate::localized!("代理响应失败: {e}", "Proxy response failed: {e}"))?;
     if head[1] != 0x00 {
-        return Err(format!("代理连接被拒绝: 状态码 {}", head[1]));
+        return Err(crate::localized!("代理连接被拒绝: 状态码 {}", "Proxy connection rejected: status code {}", head[1]));
     }
     let skip = match head[3] {
         0x01 => 6,
@@ -89,17 +89,17 @@ async fn socks5_handshake(
             stream
                 .read_exact(&mut l)
                 .await
-                .map_err(|e| format!("代理响应失败: {e}"))?;
+                .map_err(|e| crate::localized!("代理响应失败: {e}", "Proxy response failed: {e}"))?;
             l[0] as usize + 2
         }
         0x04 => 18,
-        other => return Err(format!("代理地址类型非法: {other}")),
+        other => return Err(crate::localized!("代理地址类型非法: {other}", "Invalid proxy address type: {other}")),
     };
     let mut sink = vec![0u8; skip];
     stream
         .read_exact(&mut sink)
         .await
-        .map_err(|e| format!("代理响应失败: {e}"))?;
+        .map_err(|e| crate::localized!("代理响应失败: {e}", "Proxy response failed: {e}"))?;
     Ok(stream)
 }
 
@@ -123,29 +123,29 @@ async fn http_connect(
     stream
         .write_all(req.as_bytes())
         .await
-        .map_err(|e| format!("发送 CONNECT 失败: {e}"))?;
+        .map_err(|e| crate::localized!("发送 CONNECT 失败: {e}", "Failed to send CONNECT: {e}"))?;
     let mut buf = Vec::new();
     let mut chunk = [0u8; 1];
     loop {
         let n = stream
             .read(&mut chunk)
             .await
-            .map_err(|e| format!("读取代理响应失败: {e}"))?;
+            .map_err(|e| crate::localized!("读取代理响应失败: {e}", "Failed to read proxy response: {e}"))?;
         if n == 0 {
-            return Err("代理提前断开".into());
+            return Err(crate::localized!("代理提前断开", "Proxy disconnected prematurely"));
         }
         buf.push(chunk[0]);
         if buf.ends_with(b"\r\n\r\n") {
             break;
         }
         if buf.len() > 8192 {
-            return Err("代理响应过长".into());
+            return Err(crate::localized!("代理响应过长", "Proxy response is too long"));
         }
     }
     let head = String::from_utf8_lossy(&buf);
     let first = head.lines().next().unwrap_or_default();
     if !first.contains(" 200 ") && !first.ends_with(" 200") {
-        return Err(format!("代理 CONNECT 失败: {first}"));
+        return Err(crate::localized!("代理 CONNECT 失败: {first}", "Proxy CONNECT failed: {first}"));
     }
     Ok(stream)
 }

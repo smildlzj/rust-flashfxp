@@ -1,3 +1,4 @@
+import { t } from '../i18n.js'
 import React, { useEffect, useState } from 'react'
 import { Ico } from '../winicons.jsx'
 import { WinButton, WinInput, WinCheck, WinTabs, WinFieldset, WinDialog } from '../win32.jsx'
@@ -46,52 +47,50 @@ export default function OptionsDialog({ open, onOpenChange, uiPref, setters, cur
 
   const general = () => (
     <>
-      <WinFieldset legend="本地浏览器">
+      <WinFieldset legend={t("local_browser")}>
         <div className="fx-form-grid">
-          <label>默认本地目录:</label>
+          <label>{t("default_local_directory")}</label>
           <div style={{ display: 'flex', gap: 6 }}>
             <WinInput value={p.defaultLocalDir}
-                      placeholder="留空则使用用户主目录"
+                      placeholder={t("leave_blank_to_use_the_home_directory")}
                       onChange={(e) => set('defaultLocalDir', e.target.value)} />
-            <WinButton compact onClick={() => set('defaultLocalDir', currentLocalDir)}>使用当前</WinButton>
+            <WinButton compact onClick={() => set('defaultLocalDir', currentLocalDir)}>{t("use_current")}</WinButton>
           </div>
         </div>
       </WinFieldset>
-      <WinFieldset legend="启动布局">
+      <WinFieldset legend={t("startup_layout")}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '4px 2px' }}>
-          <WinCheck checked={p.startupQuickbar} onChange={(v) => set('startupQuickbar', v)} label="启动时显示快速连接栏" />
-          <WinCheck checked={p.startupHeaderbar} onChange={(v) => set('startupHeaderbar', v)} label="启动时显示头部状态栏" />
-          <WinCheck checked={p.startupTree} onChange={(v) => set('startupTree', v)} label="启动时显示目录树" />
-          <WinCheck checked={p.startupBottom} onChange={(v) => set('startupBottom', v)} label="启动时显示队列与日志窗口" />
+          <WinCheck checked={p.startupQuickbar} onChange={(v) => set('startupQuickbar', v)} label={t("show_quick_connect_bar_at_startup")} />
+          <WinCheck checked={p.startupHeaderbar} onChange={(v) => set('startupHeaderbar', v)} label={t("show_header_status_bar_at_startup")} />
+          <WinCheck checked={p.startupTree} onChange={(v) => set('startupTree', v)} label={t("show_directory_tree_at_startup")} />
+          <WinCheck checked={p.startupBottom} onChange={(v) => set('startupBottom', v)} label={t("show_queue_and_log_windows_at_startup")} />
         </div>
       </WinFieldset>
     </>
   )
 
   const transfer = () => (
-    <WinFieldset legend="文件操作确认">
+    <WinFieldset legend={t("file_operation_confirmation")}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '4px 2px' }}>
-        <WinCheck checked={p.confirmDelete} onChange={(v) => set('confirmDelete', v)} label="删除文件 / 目录前询问确认" />
+        <WinCheck checked={p.confirmDelete} onChange={(v) => set('confirmDelete', v)} label={t("confirm_before_deleting_files_folders")} />
       </div>
     </WinFieldset>
   )
 
   return (
-    <WinDialog open={open} title="参数选择" width={560} height={420} icon="app" onClose={close}
+    <WinDialog open={open} title={t("preferences_2")} width={560} height={420} icon="app" onClose={close}
       footer={<>
-        <WinButton variant="outline" onClick={close}>取消</WinButton>
-        <WinButton onClick={apply} disabled={false}>确定(O)</WinButton>
+        <WinButton variant="outline" onClick={close}>{t("cancel")}</WinButton>
+        <WinButton onClick={apply} disabled={false}>{t("ok_o")}</WinButton>
       </>}>
       <WinTabs value={tab} onChange={setTab} tabs={[
-        { value: 'general', label: '常规' },
-        { value: 'transfer', label: '传输' },
+        { value: 'general', label: t("general") },
+        { value: 'transfer', label: t("transfers") },
       ]} />
-      <div className="fx-tab-content" style={{ height: 300 }}>
+      <div className="fx-tab-content" style={{ minHeight: 300 }}>
         {tab === 'general' ? general() : transfer()}
       </div>
-      <div className="fx-hint" style={{ marginTop: 8 }}>
-        提示：修改「启动布局」会立即影响当前窗口并保存到下次启动。
-      </div>
+      <div className="fx-hint" style={{ marginTop: 8 }}> {t("changes_to_the_startup_layout_apply_immediately_and_are_saved_for_the_next_launch")} </div>
     </WinDialog>
   )
 }

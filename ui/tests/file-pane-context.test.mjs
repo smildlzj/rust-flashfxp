@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
 import React from 'react'
+import * as i18n from '../src/i18n.js'
 import { transformWithEsbuild } from 'vite'
 
 const source = await readFile(new URL('../src/components/FilePane.jsx', import.meta.url), 'utf8')
@@ -12,6 +13,7 @@ const module = new vm.SourceTextModule(code, { context })
 await module.link(async name => {
   const exports = name === 'react'
     ? { default: React, useState: initial => [initial, () => {}] }
+    : name.includes('i18n') ? i18n
     : name.includes('winicons') ? { Ico: () => null }
     : { humanSize: String, fmtTime: String }
   return new vm.SyntheticModule(Object.keys(exports), function () {

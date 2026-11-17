@@ -1,3 +1,4 @@
+import { t, getLocale, formatNumber } from '../i18n.js'
 import React, { useState } from 'react'
 import { Ico } from '../winicons.jsx'
 import { humanSize, fmtTime } from '../api.js'
@@ -30,36 +31,34 @@ export default function FilePane({
     const target = entries[i]
     onSelect(i)
     onContextMenu && onContextMenu(e, [
-      { label: isLocal ? '传输（上传到远程）' : '传输（下载到本地）', disabled: !connected, act: () => onAction('transfer', target) },
-      { label: '传送为…', disabled: true },
+      { label: isLocal ? t("transfer_upload_to_remote") : t("transfer_download_to_local"), disabled: !connected, act: () => onAction('transfer', target) },
       { sep: true },
-      { label: '重命名…', act: () => onAction('rename', target) },
-      { label: '删除', key: 'Del', act: () => onAction('delete', target) },
+      { label: t("rename_2"), act: () => onAction('rename', target) },
+      { label: t("delete"), key: 'Del', act: () => onAction('delete', target) },
       { sep: true },
-      { label: '新建目录…', key: 'F7', act: () => onAction('mkdir') },
-      { label: '刷新', key: 'F5', act: onRefresh },
+      { label: t("new_folder"), key: 'F7', act: () => onAction('mkdir') },
+      { label: t("refresh"), key: 'F5', act: onRefresh },
       { sep: true },
-      { label: '与对侧比较', disabled: !connected, act: () => onAction('compare') },
-      { label: '清除比较标记', act: () => onAction('clear-compare') },
+      { label: t("compare_with_other_pane"), disabled: !connected, act: () => onAction('compare') },
+      { label: t("clear_comparison_marks"), act: () => onAction('clear-compare') },
       { sep: true },
-      { label: '复制路径', act: () => navigator.clipboard?.writeText(`${address || ''}/${entries[i]?.name || ''}`) },
-      { label: '属性…', disabled: true },
+      { label: t("copy_path"), act: () => navigator.clipboard?.writeText(`${address || ''}/${entries[i]?.name || ''}`) },
     ], i)
   }
 
   const bgMenu = (e) => {
     onContextMenu && onContextMenu(e, [
-      { label: '刷新', key: 'F5', act: onRefresh },
-      { label: '上级目录', act: onNavigate },
-      { label: isLocal ? '主目录' : '根目录', act: onHome },
+      { label: t("refresh"), key: 'F5', act: onRefresh },
+      { label: t("parent_directory"), act: onNavigate },
+      { label: isLocal ? t("home_directory") : t("root_directory"), act: onHome },
       { sep: true },
-      { label: '新建目录…', key: 'F7', act: () => onAction('mkdir') },
-      { label: '与对侧比较', disabled: !connected, act: () => onAction('compare') },
-      { label: '清除比较标记', act: () => onAction('clear-compare') },
+      { label: t("new_folder"), key: 'F7', act: () => onAction('mkdir') },
+      { label: t("compare_with_other_pane"), disabled: !connected, act: () => onAction('compare') },
+      { label: t("clear_comparison_marks"), act: () => onAction('clear-compare') },
       { sep: true },
-      { label: '按名称排序', act: () => onAction('sort-name') },
-      { label: '按大小排序', act: () => onAction('sort-size') },
-      { label: '按时间排序', act: () => onAction('sort-time') },
+      { label: t("sort_by_name"), act: () => onAction('sort-name') },
+      { label: t("sort_by_size"), act: () => onAction('sort-size') },
+      { label: t("sort_by_time"), act: () => onAction('sort-time') },
     ])
   }
 
@@ -87,15 +86,15 @@ export default function FilePane({
           <colgroup>
             <col />
             <col style={{ width: isLocal ? 66 : 62 }} />
-            <col style={{ width: isLocal ? 138 : 132 }} />
+            <col style={{ width: getLocale() === 'en' ? 175 : isLocal ? 138 : 132 }} />
             {!isLocal && <col style={{ width: 84 }} />}
           </colgroup>
           <thead>
             <tr>
-              {th('name', '名称')}
-              {th('size', '大小', 'fx-th-right')}
-              {th('time', '修改时间')}
-              {!isLocal && <th>属性</th>}
+              {th('name', t("name"))}
+              {th('size', t("size"), 'fx-th-right')}
+              {th('time', t("modified"))}
+              {!isLocal && <th>{t("attributes")}</th>}
             </tr>
           </thead>
           <tbody>
@@ -104,7 +103,7 @@ export default function FilePane({
               <td>
                 <div className="fx-cell">
                   <span className="fx-cell-icon"><Ico name="up" size={16} /></span>
-                  <span className="fx-cell-name">上级目录</span>
+                  <span className="fx-cell-name">{t("parent_directory")}</span>
                 </div>
               </td>
               <td /><td />{!isLocal && <td />}
@@ -144,10 +143,10 @@ export default function FilePane({
       {/* 栏底统计条（两行） */}
       <div className={`fx-stat ${isLocal ? 'local' : 'remote'}`}>
         <div className="fx-stat-line">
-          {files} 个文件, {dirs} 个文件夹, 共计 {files + dirs} 项 ({total ? humanSize(total) : '0 字节'}
-          {isLocal && diskFree ? ` / ${humanSize(diskFree)} 可用` : ''})
+          {formatNumber(files)} {t("files")} {formatNumber(dirs)} {t("folders_total")} {formatNumber(files + dirs)} {t("items")}{total ? humanSize(total) : t("0_bytes")}
+          {isLocal && diskFree ? t("value_free", [humanSize(diskFree)]) : ''})
         </div>
-        <div className="fx-stat-sub">{isLocal ? '本地浏览器' : (host || '')}</div>
+        <div className="fx-stat-sub">{isLocal ? t("local_browser") : (host || '')}</div>
       </div>
     </div>
   )

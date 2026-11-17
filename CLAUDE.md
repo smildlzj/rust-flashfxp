@@ -5,7 +5,7 @@
 
 ## 项目概要
 
-- 复刻 Windows 经典 FTP 客户端 FlashFXP 的跨平台桌面应用（macOS），产品名 **Rust Flash Ftp**。支持 FTP/FTPS/SFTP、双栏浏览、断点续传、队列持久化、同步浏览、目录比较、SOCKS5/HTTP 代理、站点互传（内存流水线，非 FXP 协议）。UI 仅中文。
+- 复刻 Windows 经典 FTP 客户端 FlashFXP 的跨平台桌面应用（macOS），产品名 **Rust Flash Ftp**。支持 FTP/FTPS/SFTP、双栏浏览、断点续传、队列持久化、同步浏览、目录比较、SOCKS5/HTTP 代理、站点互传（内存流水线，非 FXP 协议）。UI 支持简体中文 / English（选项 → 语言）。
 - **`docs/plans/HANDOFF.md` 是权威交接文档**（本地，不入 git）：含功能完成状态、已知待办、每轮迭代记录与踩坑细节。做任何改动前先读它，改完后如影响功能状态需同步更新。
 
 ## 布局约束

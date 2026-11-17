@@ -1,3 +1,5 @@
+import { t } from '../i18n.js'
+import { useLanguage } from '../LanguageContext.jsx'
 import React, { useEffect, useState } from 'react'
 import { Ico } from '../winicons.jsx'
 import { api } from '../api.js'
@@ -37,15 +39,15 @@ function TreeNode({ node, expandedSet, onToggle, onNavigate, currentPath, onCont
       <div className={`fx-tree-row ${node.selectable !== false && currentPath === node.path ? 'fx-selected' : ''}`}
            onClick={() => onNavigate(node.path)}
            onContextMenu={(e) => onContextMenu && onContextMenu(e, [
-             { label: '打开', act: () => onNavigate(node.path) },
-             { label: expanded ? '折叠' : '展开', disabled: !expandable, act: () => onToggle(key) },
+             { label: t("open"), act: () => onNavigate(node.path) },
+             { label: expanded ? t("collapse") : t("expand"), disabled: !expandable, act: () => onToggle(key) },
              { sep: true },
-             { label: '刷新', key: 'F5', act: () => onNavigate(node.path) },
-             { label: '上级目录', act: () => onNavigate(node.path.replace(/\/[^/]+\/?$/, '') || '/') },
+             { label: t("refresh"), key: 'F5', act: () => onNavigate(node.path) },
+             { label: t("parent_directory"), act: () => onNavigate(node.path.replace(/\/[^/]+\/?$/, '') || '/') },
              { sep: true },
-             { label: '复制路径', act: () => navigator.clipboard?.writeText(node.path) },
+             { label: t("copy_path"), act: () => navigator.clipboard?.writeText(node.path) },
            ])}>
-        <button className="fx-tree-arrow" title={expanded ? '折叠' : '展开'}
+        <button className="fx-tree-arrow" title={expanded ? t("collapse") : t("expand")}
                 onClick={(e) => { e.stopPropagation(); onToggle(key) }}>
           {expandable && (expanded ? '▼' : '▶')}
         </button>
@@ -67,34 +69,35 @@ function TreeNode({ node, expandedSet, onToggle, onNavigate, currentPath, onCont
 }
 
 export default function DirTree({ home, onNavigate, currentPath, onContextMenu }) {
+  const { language } = useLanguage()
   const [roots, setRoots] = useState([])
   const [expandedSet, setExpandedSet] = useState(loadExpanded)
 
   useEffect(() => {
     if (!home) return
-    const user = home.split('/').pop() || '用户'
+    const user = home.split('/').pop() || t("user")
     const q = (name, dir, icon, tag = 'top') => ({
       name, path: `${home}/${dir}`, icon, load: true, key: `${tag}:${dir}`,
     })
     const nodes = [
-      q('桌面', 'Desktop', 'desktop'),
-      { name: '云盘', path: home, icon: 'cloud', load: false, key: 'cloud', selectable: false },
+      q(t("desktop"), 'Desktop', 'desktop'),
+      { name: t("cloud_drive"), path: home, icon: 'cloud', load: false, key: 'cloud', selectable: false },
       { name: user, path: home, icon: 'user', load: true, key: 'user' },
       {
-        name: '此电脑', path: '/', icon: 'computer', load: false, key: 'computer',
+        name: t("this_computer"), path: '/', icon: 'computer', load: false, key: 'computer',
         children: [
-          q('桌面', 'Desktop', 'desktop', 'pc'),
-          q('下载', 'Downloads', 'folder', 'pc'),
-          q('文稿', 'Documents', 'folder', 'pc'),
-          q('图片', 'Pictures', 'folder', 'pc'),
-          q('音乐', 'Music', 'folder', 'pc'),
-          q('影片', 'Movies', 'folder', 'pc'),
-          { name: '本地磁盘 (C:)', path: '/', icon: 'drive', load: true, key: 'driveC' },
-          { name: '本地磁盘 (D:)', path: '/Volumes', icon: 'drive', load: true, key: 'driveD' },
+          q(t("desktop"), 'Desktop', 'desktop', 'pc'),
+          q(t("download"), 'Downloads', 'folder', 'pc'),
+          q(t("documents"), 'Documents', 'folder', 'pc'),
+          q(t("pictures"), 'Pictures', 'folder', 'pc'),
+          q(t("music"), 'Music', 'folder', 'pc'),
+          q(t("movies"), 'Movies', 'folder', 'pc'),
+          { name: t("local_disk_c"), path: '/', icon: 'drive', load: true, key: 'driveC' },
+          { name: t("local_disk_d"), path: '/Volumes', icon: 'drive', load: true, key: 'driveD' },
         ],
       },
-      { name: '库', path: `${home}/Library`, icon: 'library', load: true },
-      { name: '网络', path: '/Volumes', icon: 'network', load: true },
+      { name: t("library"), path: `${home}/Library`, icon: 'library', load: true },
+      { name: t("network"), path: '/Volumes', icon: 'network', load: true },
     ]
     setRoots(nodes)
     setExpandedSet(prev => {
@@ -108,7 +111,7 @@ export default function DirTree({ home, onNavigate, currentPath, onContextMenu }
       }))
       setRoots(prev => [...prev, ...dirs])
     }).catch(() => {})
-  }, [home])
+  }, [home, language])
 
   const onToggle = (path) => {
     setExpandedSet(prev => {
@@ -123,10 +126,10 @@ export default function DirTree({ home, onNavigate, currentPath, onContextMenu }
   return (
     <div className="fx-tree fx-scroll"
          onContextMenu={(e) => onContextMenu && onContextMenu(e, [
-           { label: '刷新目录树', key: 'F5', act: () => onNavigate(currentPath || home) },
-           { label: '主目录', act: () => onNavigate(home) },
+           { label: t("refresh_directory_tree"), key: 'F5', act: () => onNavigate(currentPath || home) },
+           { label: t("home_directory"), act: () => onNavigate(home) },
            { sep: true },
-           { label: '此电脑 (根目录)', act: () => onNavigate('/') },
+           { label: t("this_computer_root"), act: () => onNavigate('/') },
          ])}>
       {roots.map(n => (
         <TreeNode key={n.path + n.name} node={n} expandedSet={expandedSet}

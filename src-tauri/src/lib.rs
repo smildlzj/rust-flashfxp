@@ -1,12 +1,27 @@
 //! Tauri 后端：把核心库（协议/传输/存储）桥接为前端 command + event
 use std::sync::mpsc as std_mpsc;
-use std::sync::OnceLock;
+use std::sync::Mutex;
+mod instance;
+mod session_state;
+mod windowing;
+use std::sync::Arc;
+use session_state::Session;
+use tauri::{Manager, WebviewWindow};
+
+fn session(window: &WebviewWindow) -> Result<Arc<Session>, String> {
+    session_state::get(window.label())
+}
+fn current_site(window: &WebviewWindow) -> Result<(Site, Option<Proxy>), String> {
+    session(window)?.current_site.lock().map_err(|e| e.to_string())?.clone()
+        .ok_or_else(|| flashfxp_lib::localized!("未连接目标站点", "No destination site connected"))
+}
+fn owner(window: &WebviewWindow) -> Result<String, String> { Ok(session(window)?.lease.id.clone()) }
 
 use flashfxp_lib::bus::{remote_join, Direction, TransferTask, UiCmd, UiEvent};
 use flashfxp_lib::session::run_backend;
 use flashfxp_lib::store::{Proxy, Site, SiteRepo};
 use tauri::{AppHandle, Emitter};
-use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
+use tokio::sync::mpsc::unbounded_channel;
 
 // ---------------- 窗口状态持久化 ----------------
 
@@ -26,7 +41,7 @@ fn win_state_path(app: &AppHandle) -> Option<std::path::PathBuf> {
 fn save_win_state(app: &AppHandle, r: WinRect) {
     if let Some(p) = win_state_path(app) {
         let _ = std::fs::create_dir_all(p.parent().unwrap());
-        let _ = std::fs::write(&p, serde_json::to_string(&r).unwrap_or_default());
+        let _ = instance::atomic_write(&p, serde_json::to_string(&r).unwrap_or_default().as_bytes());
     }
 }
 
@@ -56,116 +71,98 @@ fn restore_win_state(app: &AppHandle) {
     }
 }
 
-static CMD_TX: OnceLock<UnboundedSender<UiCmd>> = OnceLock::new();
-static LAST_SITE: OnceLock<(Site, Option<Proxy>)> = OnceLock::new();
-static CANCELLED: OnceLock<std::sync::Mutex<std::collections::HashSet<u64>>> = OnceLock::new();
-static TASK_DB: OnceLock<std::sync::Mutex<std::collections::HashMap<u64, i64>>> = OnceLock::new();
-static RESTORED_DB: OnceLock<std::sync::Mutex<std::collections::HashSet<i64>>> = OnceLock::new();
-
-fn task_db() -> &'static std::sync::Mutex<std::collections::HashMap<u64, i64>> {
-    TASK_DB.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
-}
-
-fn restored_db() -> &'static std::sync::Mutex<std::collections::HashSet<i64>> {
-    RESTORED_DB.get_or_init(|| std::sync::Mutex::new(std::collections::HashSet::new()))
-}
-
-/// 记录任务 -> 数据库行映射（完成时更新数据库状态）
-fn track_task(id: u64, db_id: i64) {
-    let _ = task_db().lock().map(|mut m| m.insert(id, db_id));
-}
-
-fn cancelled_set() -> &'static std::sync::Mutex<std::collections::HashSet<u64>> {
-    CANCELLED.get_or_init(|| std::sync::Mutex::new(std::collections::HashSet::new()))
+fn track_task(window: &WebviewWindow, id: u64, db_id: i64) -> Result<(), String> {
+    session(window)?.tasks.lock().map_err(|e| e.to_string())?.insert(id, db_id);
+    Ok(())
 }
 
 /// 取消传输任务（等待中的任务在开始前生效）
 #[tauri::command]
-fn transfer_cancel(id: u64) -> Result<bool, String> {
-    let mut set = cancelled_set().lock().map_err(|e| e.to_string())?;
-    let first = set.insert(id);
+fn transfer_cancel(window: WebviewWindow, id: u64) -> Result<bool, String> {
+    let session = session(&window)?;
+    let first = session.cancelled.lock().map_err(|e| e.to_string())?.insert(id);
     if first {
-        flashfxp_lib::session::ftp::mark_cancelled(id);
+        let worker_id = session.ids.lock().map_err(|e| e.to_string())?.worker_id(id);
+        flashfxp_lib::session::ftp::mark_cancelled(worker_id);
+        if let Some(db_id) = session.tasks.lock().map_err(|e| e.to_string())?.get(&id).copied() {
+            let repo = SiteRepo::open().map_err(|e| e.to_string())?;
+            repo.queue_set_status_owned(&session.lease.id, db_id, "cancelled", None).map_err(|e| e.to_string())?;
+        }
+    }
+    let restored_event = instance::restored_cancellation(id,
+        &mut *session.restored.lock().map_err(|e| e.to_string())?,
+        &mut *session.tasks.lock().map_err(|e| e.to_string())?);
+    if let Some(event) = restored_event {
+        session.cancelled.lock().map_err(|e| e.to_string())?.remove(&id);
+        let worker = session.ids.lock().map_err(|e| e.to_string())?.worker_id(id);
+        flashfxp_lib::session::ftp::take_cancelled(worker);
+        session.ids.lock().map_err(|e| e.to_string())?.remove(id);
+        window.emit_to(tauri::EventTarget::webview_window(window.label()), "fx-event", event).map_err(|e| e.to_string())?;
     }
     Ok(first)
 }
 
-fn send_cmd(cmd: UiCmd) -> Result<(), String> {
-    CMD_TX
-        .get()
-        .ok_or_else(|| "后端未就绪".to_string())?
-        .send(cmd)
-        .map_err(|e| format!("发送命令失败: {e}"))
+fn send_cmd(window: &WebviewWindow, cmd: UiCmd) -> Result<(), String> {
+    session(window)?.cmd_tx.send(cmd)
+        .map_err(|e| flashfxp_lib::localized!("发送命令失败: {e}", "Failed to send command: {e}"))
+}
+
+fn attach_session(app: &AppHandle, label: &str) -> Result<(), String> {
+    let lease_dir = app.path().app_data_dir().map_err(|e| e.to_string())?.join("instances");
+    let lease = instance::Instance::create(lease_dir).map_err(|e| e.to_string())?;
+    let (cmd_tx, cmd_rx) = unbounded_channel::<UiCmd>();
+    let (event_tx, event_rx) = std_mpsc::channel::<UiEvent>();
+    let session = Arc::new(Session {
+        lease, cmd_tx, current_site: Mutex::new(None), tasks: Mutex::new(Default::default()),
+        restored: Mutex::new(Default::default()), cancelled: Mutex::new(Default::default()),
+        ids: Mutex::new(Default::default()),
+    });
+    session_state::insert(label.to_string(), session.clone())?;
+    tauri::async_runtime::spawn(run_backend(cmd_rx, event_tx));
+    let target = app.clone();
+    let label = label.to_string();
+    let weak_session = Arc::downgrade(&session);
+    std::thread::spawn(move || {
+        while let Ok(event) = event_rx.recv() {
+            let Some(session) = weak_session.upgrade() else { break };
+            let event = match session.ids.lock() {
+                Ok(ids) => session_state::local_event(event, &ids),
+                Err(_) => None,
+            };
+            let Some(event) = event else { continue };
+            let mut payload = serde_json::to_value(&event).expect("event serialization");
+            if let UiEvent::TransferFinished { id, ok, error } = &event {
+                let cancelled = session.cancelled.lock().map(|mut set| set.remove(id)).unwrap_or(false) && !ok;
+                payload["TransferFinished"]["cancelled"] = serde_json::json!(cancelled);
+                let db_id = session.tasks.lock().ok().and_then(|mut tasks| tasks.remove(id));
+                if let Some(db_id) = db_id {
+                    if let Ok(repo) = SiteRepo::open() {
+                        let status = if cancelled { "cancelled" } else if *ok { "done" } else { "failed" };
+                        let _ = repo.queue_set_status_owned(&session.lease.id, db_id, status, error.as_deref());
+                    }
+                }
+                if let Ok(mut ids) = session.ids.lock() { ids.remove(*id); }
+            }
+            let _ = target.emit_to(tauri::EventTarget::webview_window(&label), "fx-event", &payload);
+        }
+    });
+    Ok(())
 }
 
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
+            use tauri::Manager;
             restore_win_state(app.handle());
-
-            // 窗口移动/缩放 → 防抖落盘（dev 重启为强杀进程，不能依赖退出钩子）
-            {
-                use std::sync::mpsc as sync_mpsc;
-                use tauri::Manager;
-                let (tx, rx) = sync_mpsc::channel::<WinRect>();
-                static RECT: OnceLock<std::sync::Mutex<WinRect>> = OnceLock::new();
-                let rect_store = RECT.get_or_init(|| std::sync::Mutex::new(WinRect::default()));
-                let win = app.get_webview_window("main").expect("主窗口缺失");
-                let init = {
-                    let f = win.scale_factor().unwrap_or(1.0);
-                    let pos: tauri::LogicalPosition<i32> = win.outer_position().unwrap_or_default().to_logical(f);
-                    let size: tauri::LogicalSize<u32> = win.outer_size().unwrap_or_default().to_logical(f);
-                    WinRect { x: pos.x, y: pos.y, w: size.width, h: size.height }
-                };
-                *rect_store.lock().unwrap() = init;
-                let store_clone = rect_store;
-                let win_close = win.clone();
-                let _ = win.on_window_event(move |e| {
-                    if let tauri::WindowEvent::CloseRequested { api, .. } = e {
-                        // 关窗驻留托盘：仅隐藏窗口；退出走托盘菜单或应用内退出
-                        api.prevent_close();
-                        let _ = win_close.hide();
-                        return;
-                    }
-                    if let Ok(mut r) = store_clone.lock() {
-                        let f = win_close.scale_factor().unwrap_or(1.0);
-                        match e {
-                            tauri::WindowEvent::Moved(p) => {
-                                let l: tauri::LogicalPosition<i32> = p.to_logical(f);
-                                r.x = l.x; r.y = l.y;
-                            }
-                            tauri::WindowEvent::Resized(s) => {
-                                let l: tauri::LogicalSize<u32> = s.to_logical(f);
-                                r.w = l.width; r.h = l.height;
-                            }
-                            _ => return,
-                        }
-                        let _ = tx.send(*r);
-                    }
-                });
-                let handle = app.handle().clone();
-                std::thread::Builder::new()
-                    .name("win-state".into())
-                    .spawn(move || {
-                        while let Ok(mut r) = rx.recv() {
-                            // 防抖：静默 500ms 后取最新值写盘
-                            loop {
-                                match rx.recv_timeout(std::time::Duration::from_millis(500)) {
-                                    Ok(newer) => r = newer,
-                                    Err(_) => break,
-                                }
-                            }
-                            save_win_state(&handle, r);
-                        }
-                    })
-                    .expect("窗口状态线程启动失败");
-            }
+            let main = app.get_webview_window("main").expect("主窗口缺失");
+            attach_session(app.handle(), main.label())?;
+            windowing::attach(&main);
+            windowing::native_menu(app.handle())?;
 
             // 托盘：菜单栏常驻图标，关窗驻留，左键切换窗口显隐
             {
                 use tauri::menu::{Menu, MenuItem};
                 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-                use tauri::Manager;
 
                 let show = MenuItem::with_id(app, "tray-show", "显示主窗口", true, None::<&str>)?;
                 let hide = MenuItem::with_id(app, "tray-hide", "隐藏主窗口", true, None::<&str>)?;
@@ -180,17 +177,8 @@ pub fn run() {
                     .menu(&menu)
                     .show_menu_on_left_click(false)
                     .on_menu_event(|app, event| match event.id().as_ref() {
-                        "tray-show" => {
-                            if let Some(w) = app.get_webview_window("main") {
-                                let _ = w.show();
-                                let _ = w.set_focus();
-                            }
-                        }
-                        "tray-hide" => {
-                            if let Some(w) = app.get_webview_window("main") {
-                                let _ = w.hide();
-                            }
-                        }
+                        "tray-show" => windowing::show(app),
+                        "tray-hide" => windowing::hide(app),
                         "tray-quit" => app.exit(0),
                         _ => {}
                     })
@@ -202,64 +190,20 @@ pub fn run() {
                         } = event
                         {
                             let app = tray.app_handle();
-                            if let Some(w) = app.get_webview_window("main") {
-                                if w.is_visible().unwrap_or(false) {
-                                    let _ = w.hide();
-                                } else {
-                                    let _ = w.show();
-                                    let _ = w.set_focus();
-                                }
-                            }
+                            if windowing::preferred(app).is_some_and(|w| w.is_visible().unwrap_or(false)) {
+                                windowing::hide(app);
+                            } else { windowing::show(app); }
                         }
                     })
                     .build(app)?;
             }
 
-            let (cmd_tx, cmd_rx) = unbounded_channel::<UiCmd>();
-            let (event_tx, event_rx) = std_mpsc::channel::<UiEvent>();
-            CMD_TX.set(cmd_tx).expect("重复初始化");
-
-            // 核心后台（与 egui 版共用 run_backend）
-            std::thread::Builder::new()
-                .name("backend".into())
-                .spawn(move || {
-                    let rt = tokio::runtime::Builder::new_multi_thread()
-                        .enable_all()
-                        .build()
-                        .expect("创建 tokio 运行时失败");
-                    rt.block_on(run_backend(cmd_rx, event_tx));
-                })
-                .expect("启动后台线程失败");
-
-            // 事件转发到前端（并维护队列持久化状态）
-            let handle: AppHandle = app.handle().clone();
-            std::thread::Builder::new()
-                .name("event-bridge".into())
-                .spawn(move || {
-                    while let Ok(ev) = event_rx.recv() {
-                        if let UiEvent::TransferFinished { id, ok, error } = &ev {
-                            let db_id = task_db().lock().ok().and_then(|mut m| m.remove(id));
-                            if let Some(db_id) = db_id {
-                                if let Ok(repo) = SiteRepo::open() {
-                                    if *ok {
-                                        let _ = repo.queue_finish(db_id);
-                                    } else {
-                                        let _ = repo.queue_fail(db_id, error.as_deref().unwrap_or(""));
-                                    }
-                                    // 取消的任务不再保留
-                                    if error.as_deref() == Some("已取消") {
-                                        let _ = repo.queue_fail(db_id, "已取消");
-                                    }
-                                }
-                            }
-                        }
-                        let _ = handle.emit("fx-event", &ev);
-                    }
-                })
-                .expect("启动事件桥接失败");
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            new_session,
+            set_language,
+            set_window_title,
             quick_connect,
             connect_site,
             disconnect,
@@ -290,14 +234,21 @@ pub fn run() {
             transfer_cancel,
             app_exit
         ])
-        .run(tauri::generate_context!())
-        .expect("Tauri 启动失败");
+        .build(tauri::generate_context!())
+        .expect("Tauri 启动失败")
+        .run(|_app, _event| {
+            // macOS 点击 Dock 图标时，恢复关闭后隐藏的主窗口。
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = _event {
+                windowing::show(_app);
+            }
+        });
 }
 
 // ---------------- 连接 ----------------
 
 #[tauri::command]
-fn quick_connect(host: String, port: u16, user: String, pass: String) -> Result<(), String> {
+fn quick_connect(window: WebviewWindow, host: String, port: u16, user: String, pass: String) -> Result<(), String> {
     let site = Site {
         id: 0,
         group_id: None,
@@ -319,79 +270,80 @@ fn quick_connect(host: String, port: u16, user: String, pass: String) -> Result<
         login_type: "normal".into(),
         timezone_offset_minutes: None,
     };
-    let _ = LAST_SITE.set((site.clone(), None));
-    send_cmd(UiCmd::Connect { site, proxy: None })
+    *session(&window)?.current_site.lock().map_err(|e| e.to_string())? = Some((site.clone(), None));
+    send_cmd(&window, UiCmd::Connect { site, proxy: None })
 }
 
 #[tauri::command]
-fn connect_site(site_id: i64, username_override: Option<String>, password_override: Option<String>) -> Result<(), String> {
+fn connect_site(window: WebviewWindow, site_id: i64, username_override: Option<String>, password_override: Option<String>) -> Result<(), String> {
     let repo = SiteRepo::open().map_err(|e| e.to_string())?;
     let mut site = repo
         .list_sites()
         .map_err(|e| e.to_string())?
         .into_iter()
         .find(|s| s.id == site_id)
-        .ok_or_else(|| "站点不存在".to_string())?;
+        .ok_or_else(|| flashfxp_lib::localized!("站点不存在", "Site not found"))?;
     // 临时覆盖仅用于当前会话和队列 worker，绝不 upsert。
     if let Some(username) = username_override { site.username = Some(username); }
     if let Some(password) = password_override { site.password = Some(password); }
     let proxy = site
         .proxy_id
         .and_then(|pid| repo.list_proxies().ok().and_then(|ps| ps.into_iter().find(|p| p.id == pid)));
-    let _ = LAST_SITE.set((site.clone(), proxy.clone()));
-    send_cmd(UiCmd::Connect { site, proxy })
+    *session(&window)?.current_site.lock().map_err(|e| e.to_string())? = Some((site.clone(), proxy.clone()));
+    send_cmd(&window, UiCmd::Connect { site, proxy })
 }
 
 #[tauri::command]
-fn disconnect() -> Result<(), String> {
-    send_cmd(UiCmd::Disconnect)
+fn disconnect(window: WebviewWindow) -> Result<(), String> {
+    *session(&window)?.current_site.lock().map_err(|e| e.to_string())? = None;
+    send_cmd(&window, UiCmd::Disconnect)
 }
 
 // ---------------- 浏览 / 文件操作 ----------------
 
 #[tauri::command]
-fn local_list(path: String) -> Result<(), String> {
-    send_cmd(UiCmd::LocalList { path: path.into() })
+fn local_list(window: WebviewWindow, path: String) -> Result<(), String> {
+    send_cmd(&window, UiCmd::LocalList { path: path.into() })
 }
 
 #[tauri::command]
-fn remote_list(path: String) -> Result<(), String> {
-    send_cmd(UiCmd::RemoteList { path })
+fn remote_list(window: WebviewWindow, path: String) -> Result<(), String> {
+    send_cmd(&window, UiCmd::RemoteList { path })
 }
 
 #[tauri::command]
-fn mkdir_local(path: String) -> Result<(), String> {
-    send_cmd(UiCmd::LocalMkdir { path: path.into() })
+fn mkdir_local(window: WebviewWindow, path: String) -> Result<(), String> {
+    send_cmd(&window, UiCmd::LocalMkdir { path: path.into() })
 }
 
 #[tauri::command]
-fn mkdir_remote(path: String) -> Result<(), String> {
-    send_cmd(UiCmd::RemoteMkdir { path })
+fn mkdir_remote(window: WebviewWindow, path: String) -> Result<(), String> {
+    send_cmd(&window, UiCmd::RemoteMkdir { path })
 }
 
 #[tauri::command]
-fn delete_local(paths: Vec<String>) -> Result<(), String> {
-    send_cmd(UiCmd::LocalDelete {
+fn delete_local(window: WebviewWindow, paths: Vec<String>) -> Result<(), String> {
+    send_cmd(&window, UiCmd::LocalDelete {
         paths: paths.into_iter().map(Into::into).collect(),
     })
 }
 
 #[tauri::command]
-fn delete_remote(paths: Vec<String>) -> Result<(), String> {
-    send_cmd(UiCmd::RemoteDelete { paths })
+fn delete_remote(window: WebviewWindow, paths: Vec<String>) -> Result<(), String> {
+    send_cmd(&window, UiCmd::RemoteDelete { paths })
 }
 
 #[tauri::command]
-fn rename_local(from: String, to: String) -> Result<(), String> {
-    send_cmd(UiCmd::LocalRename {
+fn rename_local(window: WebviewWindow, from: String, to: String) -> Result<(), String> {
+    send_cmd(&window, UiCmd::LocalRename {
         from: from.into(),
         to: to.into(),
     })
 }
 
 #[tauri::command]
-fn rename_remote(from: String, to: String) -> Result<(), String> {
-    send_cmd(UiCmd::RemoteRename { from, to })
+fn rename_remote(window: WebviewWindow, from: String, to: String) -> Result<(), String> {
+    send_cmd(&window, UiCmd::RemoteRename { from, to })
 }
 
 // ---------------- 传输 ----------------
@@ -407,11 +359,15 @@ struct EnqueueArgs {
 }
 
 #[tauri::command]
-fn enqueue_transfer(args: EnqueueArgs) -> Result<(), String> {
+fn enqueue_transfer(window: WebviewWindow, args: EnqueueArgs) -> Result<(), String> {
     let direction = match args.direction.as_str() {
         "download" => Direction::Download,
         _ => Direction::Upload,
     };
+    let (site, _) = current_site(&window)?;
+    let site_key = instance::site_key(&site);
+    let owner = owner(&window)?;
+    let session = session(&window)?;
     // 队列持久化
     let kind = match (direction, args.is_dir) {
         (Direction::Download, false) => "download",
@@ -420,15 +376,25 @@ fn enqueue_transfer(args: EnqueueArgs) -> Result<(), String> {
         (Direction::Upload, true) => "upload_dir",
         _ => "upload",
     };
-    let db_id = SiteRepo::open()
-        .ok()
-        .and_then(|repo| repo.queue_add(kind, &args.remote_path, &args.local_path, 0).ok());
-    if let Some(db_id) = db_id {
-        track_task(args.id, db_id);
+    let repo = SiteRepo::open().map_err(|e| e.to_string())?;
+    let tracked = session.tasks.lock().map_err(|e| e.to_string())?.get(&args.id).copied();
+    let db_id = if let Some(id) = tracked {
+        if !repo.queue_owned_pending(&owner, id, &site_key).map_err(|e| e.to_string())? {
+            return Err(flashfxp_lib::localized!("队列任务不属于当前站点或实例", "Queue task does not belong to the current site or instance"));
+        }
+        id
+    } else {
+        repo.queue_add_owned(&owner, &site_key, kind, &args.remote_path, &args.local_path, 0).map_err(|e| e.to_string())?
+    };
+    if !repo.queue_start_owned(&owner, db_id, &site_key).map_err(|e| e.to_string())? {
+        return Err(flashfxp_lib::localized!("任务已提交或已取消", "Task has already been submitted or cancelled"));
     }
-    send_cmd(UiCmd::Enqueue {
+    session.restored.lock().map_err(|e| e.to_string())?.remove(&args.id);
+    track_task(&window, args.id, db_id)?;
+    let worker_id = session.ids.lock().map_err(|e| e.to_string())?.worker_id(args.id);
+    send_cmd(&window, UiCmd::Enqueue {
         task: TransferTask {
-            id: args.id,
+            id: worker_id,
             direction,
             remote_path: args.remote_path,
             local_path: args.local_path.into(),
@@ -447,31 +413,28 @@ struct RelayArgs {
 }
 
 #[tauri::command]
-fn relay_transfer(args: RelayArgs) -> Result<(), String> {
+fn relay_transfer(window: WebviewWindow, args: RelayArgs) -> Result<(), String> {
     let repo = SiteRepo::open().map_err(|e| e.to_string())?;
     let src_site = repo
         .list_sites()
         .map_err(|e| e.to_string())?
         .into_iter()
         .find(|s| s.id == args.src_site_id)
-        .ok_or_else(|| "源站点不存在".to_string())?;
+        .ok_or_else(|| flashfxp_lib::localized!("源站点不存在", "Source site not found"))?;
     let src_proxy = src_site.proxy_id.and_then(|pid| {
         repo.list_proxies()
             .ok()
             .and_then(|ps| ps.into_iter().find(|p| p.id == pid))
     });
     // 目标 = 当前连接站点（前端无法传，需要后端记忆最近连接站点）
-    let dst = LAST_SITE
-        .get()
-        .ok_or_else(|| "未连接目标站点".to_string())?;
-    let dst_site = dst.0.clone();
-    let dst_proxy = dst.1.clone();
+    let (dst_site, dst_proxy) = current_site(&window)?;
     let dst_path = args.dst_path.trim_end_matches('/').to_string();
     let dst_path = if dst_path.is_empty() { "/".into() } else { dst_path };
     let _ = remote_join(&dst_path, ""); // 模块引用保活
-    send_cmd(UiCmd::RelayEnqueue {
+    let worker_id = session(&window)?.ids.lock().map_err(|e| e.to_string())?.worker_id(args.id);
+    send_cmd(&window, UiCmd::RelayEnqueue {
         task: flashfxp_lib::bus::RelayTask {
-            id: args.id,
+            id: worker_id,
             src_site,
             src_proxy,
             src_path: args.src_path,
@@ -484,29 +447,34 @@ fn relay_transfer(args: RelayArgs) -> Result<(), String> {
 
 /// 恢复未完成任务（仅恢复到界面等待状态，不自动执行；由用户在队列面板点“恢复待传”手动重放）
 #[tauri::command]
-fn restore_pending_queue() -> Result<Vec<serde_json::Value>, String> {
+fn restore_pending_queue(window: WebviewWindow) -> Result<Vec<serde_json::Value>, String> {
     let repo = SiteRepo::open().map_err(|e| e.to_string())?;
-    let pending = repo.queue_pending().map_err(|e| e.to_string())?;
-    let mut out = Vec::new();
-    static NEXT_ID: OnceLock<std::sync::atomic::AtomicU64> = OnceLock::new();
-    let counter = NEXT_ID.get_or_init(|| std::sync::atomic::AtomicU64::new(1));
-    let already_restored: Vec<i64> = restored_db()
-        .lock()
-        .map(|set| set.iter().copied().collect())
-        .unwrap_or_default();
-    for (db_id, kind, src, dst) in pending {
-        if already_restored.contains(&db_id) {
-            continue; // 本次会话已恢复过，避免重复
+    let (site, _) = current_site(&window)?;
+    let key = instance::site_key(&site);
+    let session = session(&window)?;
+    let instance = &session.lease;
+    let mut pending = Vec::new();
+    for previous in repo.queue_owners(&key).map_err(|e| e.to_string())? {
+        if let Some(_lease) = instance.lock_inactive(&previous).map_err(|e| e.to_string())? {
+            pending.extend(repo.queue_claim(&instance.id, &previous, &key).map_err(|e| e.to_string())?);
         }
-        let (direction, is_dir, remote, local) = match kind.as_str() {
-            "download" => (Direction::Download, false, src, dst),
-            "download_dir" => (Direction::Download, true, src, dst),
-            "upload" => (Direction::Upload, false, dst, src),
-            _ => (Direction::Upload, true, dst, src),
+    }
+    let mut out = Vec::new();
+    static NEXT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1u64 << 32);
+    let counter = &NEXT_ID;
+    for task in pending {
+        let db_id = task.id;
+        let (direction, is_dir) = match task.kind.as_str() {
+            "download" => (Direction::Download, false),
+            "download_dir" => (Direction::Download, true),
+            "upload" => (Direction::Upload, false),
+            _ => (Direction::Upload, true),
         };
-        let _ = restored_db().lock().map(|mut set| set.insert(db_id));
+        let remote = task.remote;
+        let local = task.local;
         let id = counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        track_task(id, db_id);
+        track_task(&window, id, db_id)?;
+        session.restored.lock().map_err(|e| e.to_string())?.insert(id);
         out.push(serde_json::json!({
             "id": id,
             "dbId": db_id,
@@ -520,9 +488,9 @@ fn restore_pending_queue() -> Result<Vec<serde_json::Value>, String> {
 }
 
 #[tauri::command]
-fn queue_clear_finished() -> Result<(), String> {
+fn queue_clear_finished(window: WebviewWindow) -> Result<(), String> {
     let repo = SiteRepo::open().map_err(|e| e.to_string())?;
-    repo.queue_clear_finished().map_err(|e| e.to_string())
+    repo.queue_clear_finished_owned(&owner(&window)?).map_err(|e| e.to_string())
 }
 
 // ---------------- 站点 / 分组 / 代理 CRUD ----------------
@@ -625,4 +593,29 @@ fn pick_folder() -> Option<String> {
 #[tauri::command]
 fn app_exit() {
     std::process::exit(0);
+}
+
+/// F12 / Cmd+N：同一应用进程内创建独立会话窗口。
+#[tauri::command]
+async fn new_session(app: AppHandle) -> Result<(), String> { windowing::create(&app) }
+
+#[tauri::command]
+fn set_language(app: AppHandle, language: String) -> Result<(), String> {
+    use tauri::menu::{Menu, MenuItem};
+    flashfxp_lib::i18n::set_language(&language);
+    app.emit("language-changed", &language).map_err(|e| e.to_string())?;
+    if let Some(tray) = app.tray_by_id("main-tray") {
+        let show = MenuItem::with_id(&app, "tray-show", flashfxp_lib::localized!("显示主窗口", "Show main window"), true, None::<&str>).map_err(|e| e.to_string())?;
+        let hide = MenuItem::with_id(&app, "tray-hide", flashfxp_lib::localized!("隐藏主窗口", "Hide main window"), true, None::<&str>).map_err(|e| e.to_string())?;
+        let quit = MenuItem::with_id(&app, "tray-quit", flashfxp_lib::localized!("退出 Rust Flash Ftp", "Quit Rust Flash Ftp"), true, None::<&str>).map_err(|e| e.to_string())?;
+        let menu = Menu::with_items(&app, &[&show, &hide, &quit]).map_err(|e| e.to_string())?;
+        tray.set_menu(Some(menu)).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// 使用调用窗口的原生标题，供 Dock / Window 菜单显示当前连接站点。
+#[tauri::command]
+fn set_window_title(window: WebviewWindow, title: String) -> Result<(), String> {
+    window.set_title(&title).map_err(|e| e.to_string())
 }

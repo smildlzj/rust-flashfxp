@@ -75,7 +75,7 @@
 
 ### 窗口状态持久化
 
-窗口 Moved/Resized 事件 → 内存队列 + 防抖 500ms → 写 `window_state.json`（物理像素单位）；启动时 `restore_win_state` 恢复。dev 重启为强杀进程，不依赖退出钩子。
+窗口 Moved/Resized 事件 → 内存队列 + 防抖 500ms → 写 `window_state.json`（逻辑像素单位）；启动时 `restore_win_state` 恢复。dev 重启为强杀进程，不依赖退出钩子。
 
 ## 继续阅读
 

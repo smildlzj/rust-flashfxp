@@ -1,3 +1,4 @@
+import { t } from '../i18n.js'
 import React, { useEffect, useState } from 'react'
 import { api } from '../api.js'
 import { Ico } from '../winicons.jsx'
@@ -26,7 +27,7 @@ export default function ProxyManager({ open, onOpenChange }) {
   }
 
   const remove = async (p) => {
-    if (!window.confirm(`删除代理「${p.name}」？`)) return
+    if (!window.confirm(t("delete_proxy_value", [p.name]))) return
     await api.deleteProxy(p.id)
     if (edit && edit.id === p.id) setEdit(null)
     await reload()
@@ -34,18 +35,18 @@ export default function ProxyManager({ open, onOpenChange }) {
 
   const footer = (
     <>
-      <WinButton className="left" onClick={() => setEdit(blank())}>新增(N)</WinButton>
-      {edit && <WinButton onClick={save}>保存(S)</WinButton>}
-      {edit && <WinButton variant="outline" onClick={() => setEdit(null)}>取消</WinButton>}
-      <WinButton variant="outline" onClick={close}>关闭(X)</WinButton>
+      <WinButton className="left" onClick={() => setEdit(blank())}>{t("add_n")}</WinButton>
+      {edit && <WinButton onClick={save}>{t("save_s")}</WinButton>}
+      {edit && <WinButton variant="outline" onClick={() => setEdit(null)}>{t("cancel")}</WinButton>}
+      <WinButton variant="outline" onClick={close}>{t("close_x")}</WinButton>
     </>
   )
 
   return (
-    <WinDialog open={open} title="代理设置" width={520} onClose={close} footer={footer}>
-      <WinFieldset legend="代理服务器列表">
+    <WinDialog open={open} title={t("proxy_settings")} width={520} onClose={close} footer={footer}>
+      <WinFieldset legend={t("proxy_server_list")}>
         <div className="fx-panel" style={{ height: 132 }}>
-          {!proxies.length && <div className="fx-hint" style={{ padding: 8 }}>（暂无代理）</div>}
+          {!proxies.length && <div className="fx-hint" style={{ padding: 8 }}>{t("no_proxies")}</div>}
           {proxies.map(p => (
             <div key={p.id} className={`fx-listbox-row ${edit && edit.id === p.id ? 'fx-selected' : ''}`}
                  onClick={() => setEdit({ ...p })}>
@@ -55,33 +56,33 @@ export default function ProxyManager({ open, onOpenChange }) {
                 {p.kind === 'socks5' ? 'SOCKS5' : 'HTTP'}　{p.host}:{p.port}
               </span>
               <span style={{ flex: 1 }} />
-              <button className="fx-dialog-x" title="编辑" onClick={(e) => { e.stopPropagation(); setEdit({ ...p }) }}>✎</button>
-              <button className="fx-dialog-x" title="删除" onClick={(e) => { e.stopPropagation(); remove(p) }}>✕</button>
+              <button className="fx-dialog-x" title={t("edit")} onClick={(e) => { e.stopPropagation(); setEdit({ ...p }) }}>✎</button>
+              <button className="fx-dialog-x" title={t("delete")} onClick={(e) => { e.stopPropagation(); remove(p) }}>✕</button>
             </div>
           ))}
         </div>
       </WinFieldset>
       {edit ? (
-        <WinFieldset legend="代理设置">
+        <WinFieldset legend={t("proxy_settings")}>
           <div className="fx-form-grid">
-            <label>名称:</label>
+            <label>{t("name_2")}</label>
             <WinInput value={edit.name} onChange={(e) => set('name', e.target.value)} />
-            <label>类型:</label>
+            <label>{t("type")}</label>
             <WinCombo value={edit.kind} onChange={(v) => set('kind', v)}
                       options={[{ value: 'socks5', label: 'SOCKS5' }, { value: 'http', label: 'HTTP (CONNECT)' }]} />
-            <label>主机地址:</label>
+            <label>{t("host_address")}</label>
             <WinInput value={edit.host} onChange={(e) => set('host', e.target.value)} />
-            <label>端口:</label>
+            <label>{t("port")}</label>
             <div><WinInput className="w-short" value={edit.port}
                            onChange={(e) => set('port', e.target.value.replace(/\D/g, ''))} /></div>
-            <label>用户名:</label>
+            <label>{t("username_3")}</label>
             <WinInput value={edit.username || ''} onChange={(e) => set('username', e.target.value)} />
-            <label>密码:</label>
+            <label>{t("password")}</label>
             <WinInput type="password" value={edit.password || ''} onChange={(e) => set('password', e.target.value)} />
           </div>
         </WinFieldset>
       ) : (
-        <div className="fx-hint">选择上方代理进行编辑，或点击「新增」创建新的代理服务器配置。</div>
+        <div className="fx-hint">{t("select_a_proxy_to_edit_or_click_add_to_create_a_proxy_server_configuration")}</div>
       )}
     </WinDialog>
   )

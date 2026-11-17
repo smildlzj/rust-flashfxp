@@ -47,10 +47,10 @@ impl FtpConn {
     pub async fn open(site: &Site, proxy: Option<&Proxy>) -> Result<Self, String> {
         let host = site.host.as_str();
         let mut conn = match site.protocol.as_str() {
-            "sftp" => return Err("SFTP 由独立后端处理".into()),
+            "sftp" => return Err(crate::localized!("SFTP 由独立后端处理", "SFTP is handled by a separate backend")),
             "ftps_implicit" => {
                 if proxy.is_some() {
-                    return Err("隐式 FTPS 暂不支持经代理连接".into());
+                    return Err(crate::localized!("隐式 FTPS 暂不支持经代理连接", "Implicit FTPS connections through a proxy are not supported yet"));
                 }
                 let connector = make_connector(site);
                 let ftp: suppaftp::AsyncRustlsFtpStream =
@@ -60,7 +60,7 @@ impl FtpConn {
                         &tls_domain(site),
                     )
                     .await
-                    .map_err(|e| format!("连接失败: {e}"))?;
+                    .map_err(|e| crate::localized!("连接失败: {e}", "Connection failed: {e}"))?;
                 Self::Tls(ftp)
             }
             "ftps_explicit" => {
@@ -70,7 +70,7 @@ impl FtpConn {
                 let ftp = plain
                     .into_secure(connector, &tls_domain(site))
                     .await
-                    .map_err(|e| format!("TLS 协商失败: {e}"))?;
+                    .map_err(|e| crate::localized!("TLS 协商失败: {e}", "TLS negotiation failed: {e}"))?;
                 Self::Tls(ftp)
             }
             _ => Self::Plain(dial_plain(site, proxy).await?),
@@ -83,7 +83,7 @@ impl FtpConn {
         arm2!(self, f => {
             let account = site.account.as_deref().filter(|a| !a.trim().is_empty());
             if account.is_some_and(|a| a.contains(['\r', '\n'])) {
-                return Err("ACCT 账号不能包含换行符".into());
+                return Err(crate::localized!("ACCT 账号不能包含换行符", "ACCT account must not contain line breaks"));
             }
             // suppaftp::login only accepts 230/331. A consumed 332 response means
             // continue authentication with ACCT, not retry USER/PASS.
@@ -94,10 +94,10 @@ impl FtpConn {
                 Ok(()) => false,
                 Err(suppaftp::FtpError::UnexpectedResponse(response))
                     if response.status == Status::LoginNeedAccount => true,
-                Err(e) => return Err(format!("登录失败: {e}")),
+                Err(e) => return Err(crate::localized!("登录失败: {e}", "Login failed: {e}")),
             };
             if needs_account && account.is_none() {
-                return Err("服务器要求 ACCT 账号，请在站点高级设置中填写".into());
+                return Err(crate::localized!("服务器要求 ACCT 账号，请在站点高级设置中填写", "The server requires an ACCT account; enter it in the advanced site settings"));
             }
             if let Some(account) = account {
                 let expected = if needs_account {
@@ -106,11 +106,11 @@ impl FtpConn {
                     &[Status::LoggedIn, Status::CommandOk, Status::CommandNotImplemented][..]
                 };
                 f.custom_command(format!("ACCT {account}"), expected).await
-                    .map_err(|e| format!("ACCT 账号认证失败: {e}"))?;
+                    .map_err(|e| crate::localized!("ACCT 账号认证失败: {e}", "ACCT account authentication failed: {e}"))?;
             }
             f.transfer_type(suppaftp::types::FileType::Binary)
                 .await
-                .map_err(|e| format!("设置二进制模式失败: {e}"))?;
+                .map_err(|e| crate::localized!("设置二进制模式失败: {e}", "Failed to set binary mode: {e}"))?;
             if !site.passive_mode {
                 f.set_mode(Mode::Active);
             }
@@ -119,26 +119,26 @@ impl FtpConn {
     }
 
     async fn cwd(&mut self, path: &str) -> Result<(), String> {
-        fwd!(self.cwd(path)).map_err(|e| format!("切换目录失败: {e}"))
+        fwd!(self.cwd(path)).map_err(|e| crate::localized!("切换目录失败: {e}", "Failed to change directory: {e}"))
     }
 
     async fn pwd(&mut self) -> Result<String, String> {
-        fwd!(self.pwd()).map_err(|e| format!("获取当前目录失败: {e}"))
+        fwd!(self.pwd()).map_err(|e| crate::localized!("获取当前目录失败: {e}", "Failed to get current directory: {e}"))
     }
 
     async fn mkdir(&mut self, path: &str) -> Result<(), String> {
-        fwd!(self.mkdir(path)).map_err(|e| format!("创建目录失败: {e}"))
+        fwd!(self.mkdir(path)).map_err(|e| crate::localized!("创建目录失败: {e}", "Failed to create directory: {e}"))
     }
 
     async fn delete(&mut self, path: &str) -> Result<(), String> {
         match fwd!(self.rm(path)) {
             Ok(_) => Ok(()),
-            Err(_) => fwd!(self.rmdir(path)).map_err(|e| format!("删除失败: {e}")),
+            Err(_) => fwd!(self.rmdir(path)).map_err(|e| crate::localized!("删除失败: {e}", "Deletion failed: {e}")),
         }
     }
 
     async fn rename(&mut self, from: &str, to: &str) -> Result<(), String> {
-        fwd!(self.rename(from, to)).map_err(|e| format!("重命名失败: {e}"))
+        fwd!(self.rename(from, to)).map_err(|e| crate::localized!("重命名失败: {e}", "Rename failed: {e}"))
     }
 
     async fn size(&mut self, path: &str) -> Option<u64> {
@@ -159,14 +159,14 @@ impl FtpConn {
         let p = path.map(|s| s.to_string());
         arm2!(self, f => {
             if mlsd {
-                f.mlsd(p.as_deref()).await.map_err(|e| format!("列出目录失败: {e}"))
+                f.mlsd(p.as_deref()).await.map_err(|e| crate::localized!("列出目录失败: {e}", "Failed to list directory: {e}"))
             } else {
                 match f.list(p.as_deref()).await {
                     Ok(lines) => Ok(lines),
                     Err(e) => f
                         .nlst(p.as_deref())
                         .await
-                        .map_err(|_| format!("列出目录失败: {e}")),
+                        .map_err(|_| crate::localized!("列出目录失败: {e}", "Failed to list directory: {e}")),
                 }
             }
         })
@@ -178,14 +178,14 @@ impl FtpConn {
         let resp = arm2!(self, f => {
             f.custom_command("PASV", &[Status::PassiveMode])
                 .await
-                .map_err(|e| format!("进入被动模式失败: {e}"))
+                .map_err(|e| crate::localized!("进入被动模式失败: {e}", "Failed to enter passive mode: {e}"))
         })?;
         let body = String::from_utf8_lossy(&resp.body).to_string();
-        let (ip, port) = parse_pasv(&body).ok_or_else(|| format!("解析被动模式地址失败: {body}"))?;
+        let (ip, port) = parse_pasv(&body).ok_or_else(|| crate::localized!("解析被动模式地址失败: {body}", "Failed to parse passive mode address: {body}"))?;
         let connect_ip = pick_data_ip(&ip, control_host);
         let mut data = async_std::net::TcpStream::connect((connect_ip.as_str(), port))
             .await
-            .map_err(|e| format!("建立数据连接失败: {e}"))?;
+            .map_err(|e| crate::localized!("建立数据连接失败: {e}", "Failed to establish data connection: {e}"))?;
         let cmd = match (mlsd, path) {
             (true, Some(p)) => format!("MLSD {p}"),
             (true, None) => "MLSD".to_string(),
@@ -195,12 +195,12 @@ impl FtpConn {
         arm2!(self, f => {
             f.custom_command(cmd.as_str(), &[Status::AboutToSend, Status::AlreadyOpen])
                 .await
-                .map_err(|e| format!("发送列表命令失败: {e}"))
+                .map_err(|e| crate::localized!("发送列表命令失败: {e}", "Failed to send directory listing command: {e}"))
         })?;
         let mut buf = Vec::new();
         data.read_to_end(&mut buf)
             .await
-            .map_err(|e| format!("读取目录数据失败: {e}"))?;
+            .map_err(|e| crate::localized!("读取目录数据失败: {e}", "Failed to read directory data: {e}"))?;
         drop(data);
         arm2!(self, f => {
             f.read_response_in(&[
@@ -209,7 +209,7 @@ impl FtpConn {
                 Status::Closing,
             ])
             .await
-            .map_err(|e| format!("列表命令收尾失败: {e}"))
+            .map_err(|e| crate::localized!("列表命令收尾失败: {e}", "Failed to finish directory listing command: {e}"))
         })?;
         Ok(buf)
     }
@@ -232,40 +232,40 @@ impl FtpConn {
             if offset > 0 {
                 f.resume_transfer(offset as usize)
                     .await
-                    .map_err(|e| format!("续传失败: {e}"))?;
+                    .map_err(|e| crate::localized!("续传失败: {e}", "Failed to resume transfer: {e}"))?;
             }
             let mut stream = f
                 .retr_as_stream(remote)
                 .await
-                .map_err(|e| format!("下载失败: {e}"))?;
+                .map_err(|e| crate::localized!("下载失败: {e}", "Download failed: {e}"))?;
             let mut file = tokio::fs::OpenOptions::new()
                 .create(true)
                 .write(offset == 0)
                 .append(offset > 0)
                 .open(local)
                 .await
-                .map_err(|e| format!("打开本地文件失败: {e}"))?;
+                .map_err(|e| crate::localized!("打开本地文件失败: {e}", "Failed to open local file: {e}"))?;
             let mut buf = vec![0u8; 256 * 1024];
             let mut transferred = base + offset;
             loop {
                 let n = stream
                     .read(&mut buf)
                     .await
-                    .map_err(|e| format!("读取数据失败: {e}"))?;
+                    .map_err(|e| crate::localized!("读取数据失败: {e}", "Failed to read data: {e}"))?;
                 if n == 0 {
                     break;
                 }
                 file.write_all(&buf[..n])
                     .await
-                    .map_err(|e| format!("写入本地文件失败: {e}"))?;
+                    .map_err(|e| crate::localized!("写入本地文件失败: {e}", "Failed to write local file: {e}"))?;
                 transferred += n as u64;
                 let _ = event_tx.send(UiEvent::TransferProgress { id, transferred });
             }
-            file.flush().await.map_err(|e| format!("写入失败: {e}"))?;
+            file.flush().await.map_err(|e| crate::localized!("写入失败: {e}", "Write failed: {e}"))?;
             drop(file);
             f.finalize_retr_stream(stream)
                 .await
-                .map_err(|e| format!("下载数据流收尾失败: {e}"))?;
+                .map_err(|e| crate::localized!("下载数据流收尾失败: {e}", "Failed to finish download stream: {e}"))?;
             Ok(())
         })
     }
@@ -286,36 +286,36 @@ impl FtpConn {
             let mut stream = if offset > 0 {
                 f.append_with_stream(remote)
                     .await
-                    .map_err(|e| format!("续传打开远程文件失败: {e}"))?
+                    .map_err(|e| crate::localized!("续传打开远程文件失败: {e}", "Failed to open remote file for resume: {e}"))?
             } else {
                 f.put_with_stream(remote)
                     .await
-                    .map_err(|e| format!("上传失败: {e}"))?
+                    .map_err(|e| crate::localized!("上传失败: {e}", "Upload failed: {e}"))?
             };
             let mut file = tokio::fs::File::open(local)
                 .await
-                .map_err(|e| format!("打开本地文件失败: {e}"))?;
+                .map_err(|e| crate::localized!("打开本地文件失败: {e}", "Failed to open local file: {e}"))?;
             if offset > 0 {
                 file.seek(std::io::SeekFrom::Start(offset))
                     .await
-                    .map_err(|e| format!("本地文件定位失败: {e}"))?;
+                    .map_err(|e| crate::localized!("本地文件定位失败: {e}", "Failed to seek local file: {e}"))?;
             }
             let mut buf = vec![0u8; 256 * 1024];
             let mut transferred = base + offset;
             loop {
-                let n = file.read(&mut buf).await.map_err(|e| format!("读取本地文件失败: {e}"))?;
+                let n = file.read(&mut buf).await.map_err(|e| crate::localized!("读取本地文件失败: {e}", "Failed to read local file: {e}"))?;
                 if n == 0 {
                     break;
                 }
                 stream.write_all(&buf[..n])
                     .await
-                    .map_err(|e| format!("发送数据失败: {e}"))?;
+                    .map_err(|e| crate::localized!("发送数据失败: {e}", "Failed to send data: {e}"))?;
                 transferred += n as u64;
                 let _ = event_tx.send(UiEvent::TransferProgress { id, transferred });
             }
             f.finalize_put_stream(stream)
                 .await
-                .map_err(|e| format!("上传数据流收尾失败: {e}"))?;
+                .map_err(|e| crate::localized!("上传数据流收尾失败: {e}", "Failed to finish upload stream: {e}"))?;
             Ok(())
         })
     }
@@ -337,11 +337,11 @@ async fn dial_plain(site: &Site, proxy: Option<&Proxy>) -> Result<AsyncFtpStream
             let stream = dial_via_proxy(p, &site.host, site.port).await?;
             AsyncFtpStream::connect_with_stream(stream)
                 .await
-                .map_err(|e| format!("经代理连接失败: {e}"))
+                .map_err(|e| crate::localized!("经代理连接失败: {e}", "Connection through proxy failed: {e}"))
         }
         None => AsyncFtpStream::connect((site.host.as_str(), site.port))
             .await
-            .map_err(|e| format!("连接失败: {e}")),
+            .map_err(|e| crate::localized!("连接失败: {e}", "Connection failed: {e}")),
     }
 }
 
@@ -355,11 +355,11 @@ async fn dial_typed(
             let stream = dial_via_proxy(p, &site.host, site.port).await?;
             suppaftp::ImplAsyncFtpStream::connect_with_stream(stream)
                 .await
-                .map_err(|e| format!("经代理连接失败: {e}"))
+                .map_err(|e| crate::localized!("经代理连接失败: {e}", "Connection through proxy failed: {e}"))
         }
         None => suppaftp::ImplAsyncFtpStream::connect((site.host.as_str(), site.port))
             .await
-            .map_err(|e| format!("连接失败: {e}")),
+            .map_err(|e| crate::localized!("连接失败: {e}", "Connection failed: {e}")),
     }
 }
 
@@ -377,14 +377,14 @@ impl FtpConn {
             let mut stream = f
                 .retr_as_stream(remote)
                 .await
-                .map_err(|e| format!("打开远程源文件失败: {e}"))?;
+                .map_err(|e| crate::localized!("打开远程源文件失败: {e}", "Failed to open remote source file: {e}"))?;
             let mut buf = vec![0u8; 256 * 1024];
             let mut transferred = base;
             loop {
                 let n = stream
                     .read(&mut buf)
                     .await
-                    .map_err(|e| format!("读取源数据失败: {e}"))?;
+                    .map_err(|e| crate::localized!("读取源数据失败: {e}", "Failed to read source data: {e}"))?;
                 if n == 0 {
                     break;
                 }
@@ -400,7 +400,7 @@ impl FtpConn {
             }
             f.finalize_retr_stream(stream)
                 .await
-                .map_err(|e| format!("源数据流收尾失败: {e}"))?;
+                .map_err(|e| crate::localized!("源数据流收尾失败: {e}", "Failed to finish source stream: {e}"))?;
             let _ = data_tx.send(crate::bus::PipeMsg::End).await;
             Ok(())
         })
@@ -416,7 +416,7 @@ impl FtpConn {
             let mut stream = f
                 .put_with_stream(remote)
                 .await
-                .map_err(|e| format!("打开远程目标文件失败: {e}"))?;
+                .map_err(|e| crate::localized!("打开远程目标文件失败: {e}", "Failed to open remote destination file: {e}"))?;
             let mut complete = false;
             while let Some(msg) = data_rx.recv().await {
                 match msg {
@@ -424,7 +424,7 @@ impl FtpConn {
                         stream
                             .write_all(&b)
                             .await
-                            .map_err(|e| format!("写入目标数据失败: {e}"))?;
+                            .map_err(|e| crate::localized!("写入目标数据失败: {e}", "Failed to write destination data: {e}"))?;
                     }
                     crate::bus::PipeMsg::End => {
                         complete = true;
@@ -433,11 +433,11 @@ impl FtpConn {
                 }
             }
             if !complete {
-                return Err("源端读取中断".into());
+                return Err(crate::localized!("源端读取中断", "Source read interrupted"));
             }
             f.finalize_put_stream(stream)
                 .await
-                .map_err(|e| format!("目标数据流收尾失败: {e}"))?;
+                .map_err(|e| crate::localized!("目标数据流收尾失败: {e}", "Failed to finish destination stream: {e}"))?;
             Ok(())
         })
     }
@@ -609,7 +609,7 @@ pub async fn run_backend(mut cmd_rx: UnboundedReceiver<UiCmd>, event_tx: Sender<
                     if let Err(e) = std::fs::create_dir_all(&path) {
                         let _ = tx.send(UiEvent::Notify {
                             level: crate::bus::Level::Error,
-                            text: format!("创建目录失败: {e}"),
+                            text: crate::localized!("创建目录失败: {e}", "Failed to create directory: {e}"),
                         });
                     }
                 }).await;
@@ -622,7 +622,7 @@ pub async fn run_backend(mut cmd_rx: UnboundedReceiver<UiCmd>, event_tx: Sender<
                         if let Err(e) = r {
                             let _ = tx.send(UiEvent::Notify {
                                 level: crate::bus::Level::Error,
-                                text: format!("删除失败: {e}"),
+                                text: crate::localized!("删除失败: {e}", "Deletion failed: {e}"),
                             });
                         }
                     }
@@ -634,7 +634,7 @@ pub async fn run_backend(mut cmd_rx: UnboundedReceiver<UiCmd>, event_tx: Sender<
                     if let Err(e) = std::fs::rename(&from, &to) {
                         let _ = tx.send(UiEvent::Notify {
                             level: crate::bus::Level::Error,
-                            text: format!("重命名失败: {e}"),
+                            text: crate::localized!("重命名失败: {e}", "Rename failed: {e}"),
                         });
                     }
                 }).await;
@@ -665,7 +665,7 @@ pub async fn run_backend(mut cmd_rx: UnboundedReceiver<UiCmd>, event_tx: Sender<
                 } else {
                     let _ = event_tx.send(UiEvent::Notify {
                         level: crate::bus::Level::Warn,
-                        text: "未连接站点，无法传输".into(),
+                        text: crate::localized!("未连接站点，无法传输", "Cannot transfer: no site is connected"),
                     });
                 }
             }
@@ -714,14 +714,14 @@ async fn run_session(
                 let _ = event_tx.send(UiEvent::RemoteList { path, entries });
             }
             Err(e) => {
-                notify(&event_tx, format!("远程初始目录「{target}」不可用：{e}"));
+                notify(&event_tx, crate::localized!("远程初始目录「{target}」不可用：{e}", "Initial remote directory \"{target}\" is unavailable: {e}"));
                 if initial.is_some() {
                     if let Some(default_path) = default_path.as_deref() {
                         match session.list_with_path(default_path).await {
                             Ok((path, entries)) => {
                                 let _ = event_tx.send(UiEvent::RemoteList { path, entries });
                             }
-                            Err(e) => notify(&event_tx, format!("返回默认目录失败：{e}")),
+                            Err(e) => notify(&event_tx, crate::localized!("返回默认目录失败：{e}", "Failed to return to default directory: {e}")),
                         }
                     }
                 }
@@ -779,7 +779,7 @@ async fn run_transfers(
             let _ = event_tx.send(UiEvent::TransferFinished {
                 id: task.id,
                 ok: false,
-                error: Some("已取消".into()),
+                error: Some(crate::localized!("已取消", "Cancelled")),
             });
             continue;
         }
@@ -791,7 +791,7 @@ async fn run_transfers(
                     let _ = event_tx.send(UiEvent::TransferFinished {
                         id: task.id,
                         ok: false,
-                        error: Some("无法建立传输连接".into()),
+                        error: Some(crate::localized!("无法建立传输连接", "Unable to establish transfer connection")),
                     });
                     continue;
                 }
@@ -859,9 +859,9 @@ async fn exec_download_dir(session: &mut RemoteSession, task: &TransferTask, eve
     let total: u64 = files.iter().map(|(_, _, s)| *s).sum();
     let _ = event_tx.send(UiEvent::TransferStarted { id: task.id, size: total });
     std::fs::create_dir_all(&task.local_path)
-        .map_err(|e| format!("创建本地目录失败: {e}"))?;
+        .map_err(|e| crate::localized!("创建本地目录失败: {e}", "Failed to create local directory: {e}"))?;
     for (_, ldir) in &dirs {
-        std::fs::create_dir_all(ldir).map_err(|e| format!("创建本地目录失败: {e}"))?;
+        std::fs::create_dir_all(ldir).map_err(|e| crate::localized!("创建本地目录失败: {e}", "Failed to create local directory: {e}"))?;
     }
     let mut base: u64 = 0;
     for (rpath, lpath, size) in &files {
@@ -899,7 +899,7 @@ fn walk_local(
     dirs: &mut Vec<(PathBuf, String)>,
     files: &mut Vec<(PathBuf, String, u64)>,
 ) -> Result<(), String> {
-    let rd = std::fs::read_dir(ldir).map_err(|e| format!("读取本地目录失败: {e}"))?;
+    let rd = std::fs::read_dir(ldir).map_err(|e| crate::localized!("读取本地目录失败: {e}", "Failed to read local directory: {e}"))?;
     for entry in rd.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
         let md = entry.metadata().ok();

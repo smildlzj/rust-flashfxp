@@ -11,6 +11,7 @@ pub fn open_db() -> anyhow::Result<Connection> {
     std::fs::create_dir_all(&db_dir)?;
     let db_path = db_dir.join("flashfxp.db");
     let conn = Connection::open(&db_path)?;
+    conn.busy_timeout(std::time::Duration::from_secs(5))?;
     init_schema(&conn)?;
     Ok(conn)
 }
@@ -88,6 +89,14 @@ fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
             .collect::<Result<Vec<_>, _>>()?;
         if !names.iter().any(|name| name == column) {
             conn.execute(&format!("ALTER TABLE sites ADD COLUMN {column} {definition}"), [])?;
+        }
+    }
+    for column in ["owner", "site_key"] {
+        let mut stmt = conn.prepare("PRAGMA table_info(queue_items)")?;
+        let names = stmt.query_map([], |r| r.get::<_, String>(1))?
+            .collect::<Result<Vec<_>, _>>()?;
+        if !names.iter().any(|name| name == column) {
+            conn.execute(&format!("ALTER TABLE queue_items ADD COLUMN {column} TEXT NOT NULL DEFAULT ''"), [])?;
         }
     }
     Ok(())
@@ -321,6 +330,57 @@ impl SiteRepo {
     }
 }
 
+/// 持久化任务；不保存密码或传输内容。src/dst 沿用队列表的远程/本地路径字段。
+#[derive(Debug)]
+pub struct StoredTask {
+    pub id: i64,
+    pub kind: String,
+    pub remote: String,
+    pub local: String,
+}
+
+impl SiteRepo {
+    pub fn queue_add_owned(&self, owner: &str, site_key: &str, kind: &str, remote: &str, local: &str, size: u64) -> anyhow::Result<i64> {
+        self.conn.execute("INSERT INTO queue_items (owner, site_key, kind, src, dst, size, status) VALUES (?1,?2,?3,?4,?5,?6,'pending')",
+            rusqlite::params![owner, site_key, kind, remote, local, size as i64])?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    pub fn queue_owners(&self, site_key: &str) -> anyhow::Result<Vec<String>> {
+        Ok(self.conn.prepare("SELECT DISTINCT owner FROM queue_items WHERE site_key=?1 AND status IN ('pending','queued') AND owner!=''")?
+            .query_map([site_key], |r| r.get(0))?.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// 单条 UPDATE RETURNING 原子认领，竞争实例不会重复取得同一任务。
+    pub fn queue_claim(&self, owner: &str, previous: &str, site_key: &str) -> anyhow::Result<Vec<StoredTask>> {
+        if owner == previous { return Ok(Vec::new()); }
+        Ok(self.conn.prepare("UPDATE queue_items SET owner=?1,status='pending' WHERE owner=?2 AND site_key=?3 AND status IN ('pending','queued') RETURNING id,kind,src,dst")?
+            .query_map(rusqlite::params![owner, previous, site_key], |r| Ok(StoredTask {
+                id: r.get(0)?, kind: r.get(1)?, remote: r.get(2)?, local: r.get(3)?,
+            }))?.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    pub fn queue_start_owned(&self, owner: &str, id: i64, site_key: &str) -> anyhow::Result<bool> {
+        Ok(self.conn.execute("UPDATE queue_items SET status='queued' WHERE owner=?1 AND id=?2 AND site_key=?3 AND status='pending'",
+            rusqlite::params![owner,id,site_key])? == 1)
+    }
+
+    pub fn queue_owned_pending(&self, owner: &str, id: i64, site_key: &str) -> anyhow::Result<bool> {
+        Ok(self.conn.query_row("SELECT EXISTS(SELECT 1 FROM queue_items WHERE owner=?1 AND id=?2 AND site_key=?3 AND status='pending')",
+            rusqlite::params![owner,id,site_key], |r| r.get(0))?)
+    }
+
+    pub fn queue_set_status_owned(&self, owner: &str, id: i64, status: &str, error: Option<&str>) -> anyhow::Result<bool> {
+        Ok(self.conn.execute("UPDATE queue_items SET status=?1,error=?2 WHERE owner=?3 AND id=?4",
+            rusqlite::params![status,error,owner,id])? == 1)
+    }
+
+    pub fn queue_clear_finished_owned(&self, owner: &str) -> anyhow::Result<()> {
+        self.conn.execute("DELETE FROM queue_items WHERE owner=?1 AND status NOT IN ('pending','queued')", [owner])?;
+        Ok(())
+    }
+}
+
 impl SiteRepo {
     pub fn list_proxies(&self) -> anyhow::Result<Vec<Proxy>> {
         let mut stmt = self.conn.prepare(
@@ -417,6 +477,62 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         init_schema(&conn).unwrap();
         SiteRepo { conn, cipher: Cipher::new() }
+    }
+
+    #[test]
+    fn resumed_task_is_accepted_once_and_recovered_after_crash() {
+        let repo = memory_repo();
+        let id = repo.queue_add_owned("123-1", "site-a", "upload", "/remote", "/local", 0).unwrap();
+        assert!(!repo.queue_start_owned("123-2", id, "site-a").unwrap());
+        assert!(!repo.queue_start_owned("123-1", id, "site-b").unwrap());
+        assert!(repo.queue_start_owned("123-1", id, "site-a").unwrap());
+        assert!(!repo.queue_start_owned("123-1", id, "site-a").unwrap());
+        repo.queue_clear_finished_owned("123-1").unwrap();
+        let recovered = repo.queue_claim("123-2", "123-1", "site-a").unwrap();
+        assert_eq!(recovered.len(), 1);
+        assert_eq!(recovered[0].id, id);
+        assert!(repo.queue_start_owned("123-2", id, "site-a").unwrap());
+    }
+
+    #[test]
+    fn concurrent_queue_claims_have_a_single_winner() {
+        let path = std::env::temp_dir().join(format!("rustftp-queue-{}-{}.db", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let conn = Connection::open(&path).unwrap();
+        init_schema(&conn).unwrap();
+        let repo = SiteRepo { conn, cipher: Cipher::new() };
+        repo.queue_add_owned("123-1", "site-a", "download", "/a", "/b", 0).unwrap();
+        drop(repo);
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let threads: Vec<_> = ["123-2", "123-3"].into_iter().map(|owner| {
+            let path = path.clone(); let barrier = barrier.clone();
+            std::thread::spawn(move || {
+                let conn = Connection::open(path).unwrap();
+                conn.busy_timeout(std::time::Duration::from_secs(5)).unwrap();
+                let repo = SiteRepo { conn, cipher: Cipher::new() };
+                barrier.wait();
+                repo.queue_claim(owner, "123-1", "site-a").unwrap().len()
+            })
+        }).collect();
+        assert_eq!(threads.into_iter().map(|t| t.join().unwrap()).sum::<usize>(), 1);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn queue_claim_is_scoped_to_dead_owner_and_matching_site() {
+        let repo = memory_repo();
+        let a = repo.queue_add_owned("old-a", "ftp://alice@one:21", "upload", "/remote/a", "/local/a", 0).unwrap();
+        repo.queue_add_owned("live", "ftp://alice@one:21", "upload", "/remote/b", "/local/b", 0).unwrap();
+        repo.queue_add_owned("old-a", "ftp://bob@two:21", "upload", "/remote/c", "/local/c", 0).unwrap();
+        let claimed = repo.queue_claim("new", "old-a", "ftp://alice@one:21").unwrap();
+        assert_eq!(claimed.len(), 1);
+        assert_eq!(claimed[0].id, a);
+        assert!(repo.queue_claim("other", "old-a", "ftp://alice@one:21").unwrap().is_empty());
+        assert!(!repo.queue_set_status_owned("other", a, "done", None).unwrap());
+        assert!(repo.queue_set_status_owned("new", a, "done", None).unwrap());
+        repo.queue_clear_finished_owned("other").unwrap();
+        assert_eq!(repo.conn.query_row("SELECT count(*) FROM queue_items WHERE id=?1", [a], |r| r.get::<_, i64>(0)).unwrap(), 1);
+        repo.queue_clear_finished_owned("new").unwrap();
+        assert_eq!(repo.conn.query_row("SELECT count(*) FROM queue_items WHERE id=?1", [a], |r| r.get::<_, i64>(0)).unwrap(), 0);
     }
 
     #[test]

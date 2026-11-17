@@ -7,23 +7,23 @@
 <p align="center"><strong>熟悉的双栏操作，集中管理你的服务器与文件传输。</strong></p>
 
 <p align="center">
-  中文界面 · FTP / FTPS / SFTP · 站点管理 · 断点续传 · macOS / Windows
+  中文 / English · FTP / FTPS / SFTP · 站点管理 · 断点续传 · macOS / Windows
 </p>
 
 <p align="center">
-  <a href="https://github.com/smildlzj/rust-flashfxp/releases">下载安装</a> ·
   <a href="#核心功能">核心功能</a> ·
+  <a href="#flashfxp-功能对照">功能对照</a> ·
   <a href="#第一次使用">开始使用</a> ·
   <a href="https://github.com/smildlzj/rust-flashfxp/issues">反馈问题</a>
 </p>
 
 ## 产品介绍
 
-Rust Flash Ftp 是一款中文桌面文件传输客户端，面向需要经常在本地电脑与服务器之间上传、下载和整理文件的用户。它参考经典 FlashFXP 的双栏操作方式，将本地目录、远程目录、传输队列和连接日志放在同一个工作窗口中。
+Rust Flash Ftp 是一款支持中文与英语的桌面文件传输客户端，面向需要经常在本地电脑与服务器之间上传、下载和整理文件的用户。它参考经典 FlashFXP 的双栏操作方式，将本地目录、远程目录、传输队列和连接日志放在同一个工作窗口中。
 
 从临时连接一台服务器，到维护多个项目的站点配置，再到批量传输整个目录，你可以沿用「找到文件 → 选择目标目录 → 加入队列」的操作习惯。常用服务器可以保存为站点，连接后进入预设的本地和远程目录，减少反复输入地址、账号与路径的步骤。
 
-产品采用 Rust 实现协议、传输与本地存储，以 Tauri 2 承载桌面应用，界面使用 React 构建。当前提供 macOS Apple Silicon、macOS Intel 与 Windows x64 的自动打包配置，界面语言为中文。
+产品采用 Rust 实现协议、传输与本地存储，以 Tauri 2 承载桌面应用，界面使用 React 构建。当前提供 macOS Apple Silicon、macOS Intel 与 Windows x64 的自动打包配置，界面支持简体中文与 English，可在“选项 → 语言”切换。
 
 ## 适用场景
 
@@ -88,6 +88,91 @@ Rust Flash Ftp 是一款中文桌面文件传输客户端，面向需要经常�
 
 系统托盘提供应用驻留入口，关闭主窗口后仍可通过托盘回到应用。窗口位置与尺寸会保存并在下次启动时恢复，常用界面选项也会保留，方便延续上一次的工作布局。
 
+## FlashFXP 功能对照
+
+以 [FlashFXP 官方功能列表](https://www.flashfxp.com/features)及其在线帮助为对照范围，覆盖公开列出的功能类别，不逐项展开每个协议命令和高级参数。勾选表示当前桌面版已有实际实现；未勾选表示尚未实现或未达到该项完整能力。部分支持会明确说明，勾选不代表所有平台和服务器均已验收。已移除的占位入口不计为已实现。
+
+### 连接、认证与代理
+
+- [x] FTP 连接、快速连接。
+- [x] FTPS 显式 TLS 与隐式 TLS。
+- [x] SFTP 连接（当前仅密码认证）。
+- [x] FTP 主动 / 被动模式（代理下主动模式兼容性未完整验收）。
+- [x] 每站点独立连接配置、本地与远程初始路径。
+- [x] 普通登录、匿名登录、连接时询问密码；FTP ACCT 账号认证。
+- [x] SOCKS5、HTTP CONNECT 代理及代理配置管理。
+- [ ] SOCKS4、FTP 专用代理、全局代理及完整防火墙配置。
+- [ ] SFTP 私钥认证、密钥管理与 Pageant 集成。
+- [ ] FTPS 客户端 X.509 证书管理及 Windows 证书存储集成。
+- [ ] SFTP 主机密钥信任管理（known_hosts）。
+- [ ] OTP / S/Key 一次性密码认证。
+- [ ] 应用主密码保护、站点解锁。
+- [ ] SSL CCC、SSCN 安全站点直传。
+- [ ] PRET 分布式服务器支持、内置 Ident 服务。
+- [ ] 多地址、绑定本地 IP、连接重试和保活策略配置。
+
+### 文件传输与队列
+
+- [x] 上传、下载、目录递归传输。
+- [x] 中断后续传（依赖协议、服务器与文件状态）。
+- [x] 传输队列、进度与状态、任务取消、清空已完成。
+- [x] 队列持久化与重启后恢复（需手动点击恢复待传）。
+- [x] 本地与远程栏间拖拽、系统文件拖入上传。
+- [x] 站点互传：读取流经本机内存缓冲写入目标，文件不落地；支持递归目录。
+- [ ] FXP：两台服务器之间直接传输，数据不经客户端。
+- [ ] MODE Z 即时压缩。
+- [ ] 上传 / 下载限速、每站点限速、缓冲区调优。
+- [ ] ASCII / Binary 自动选择（当前 FTP 固定二进制）。
+- [ ] 文件存在时的完整覆盖规则、选择性传输、跳过列表。
+- [ ] 队列暂停 / 继续、优先级、排序与队列文件导入 / 导出。
+- [ ] 续传回退校验、SFV / CRC 文件完整性检查。
+- [ ] 定时传输、后台计划任务、邮件通知。
+- [ ] 传输完成后自动退出、关机等动作。
+
+### 浏览与文件管理
+
+- [x] 双栏文件浏览、目录树、路径输入与历史、名称 / 大小 / 时间排序。
+- [x] 新建目录，文件 / 目录重命名、删除及复制路径。
+- [x] 同步浏览（导航联动，不自动同步文件）。
+- [x] 当前目录比较（名称与大小，标记仅一侧存在或大小不同）。
+- [x] FTP FEAT 探测及 MLSD 列表，兼容传统 LIST。
+- [x] UTF-8、GBK、Big5、Shift-JIS 等文件名编码。
+- [x] 手动服务器时区偏移；MLSD / SFTP 使用 UTC 时间。
+- [ ] 传统 LIST 服务器时差自动探测。
+- [ ] 完整比较规则：日期、部分名称、排除扩展名、隐藏或选中匹配项。
+- [ ] 自动目录同步与镜像。
+- [ ] 远程搜索、递归统计目录占用空间。
+- [ ] Unix 权限修改、递归 chmod、文件属性编辑。
+- [ ] 同侧文件复制 / 移动、多选批量操作、传送为其他名称。
+- [ ] 远程查看 / 编辑、保存后自动上传、多文件编辑、编辑器关联。
+- [ ] 目录书签、模式高亮、标记列表与筛选。
+- [ ] 远程目录缓存、STAT 快速列表。
+- [ ] 手动指定路径下载、剪贴板 URL 监控与自动传输。
+
+### 站点管理与高级工具
+
+- [x] 站点新增、编辑、删除、分组及备注。
+- [x] 临时询问的凭证仅用于会话，不保存到站点密码字段。
+- [ ] 站点导入 / 导出（原版支持 XML 格式的 `.ftp` 文件）。
+- [ ] 整体配置备份 / 恢复。
+- [ ] 站点复制、禁用、嵌套分组、统计与 URL 映射。
+- [ ] 自定义 SITE 命令、命令编辑器、脚本与远程 Shell。
+- [ ] 自动化命令行参数。
+
+### 界面与桌面集成
+
+- [x] 队列 / 日志切换与并排显示、分割线调整及尺寸记忆。
+- [x] 窗口位置和尺寸保存、托盘显示 / 隐藏 / 退出；原生窗口标题显示当前站点，供 Dock / 窗口菜单区分会话。
+- [x] 常用快捷键、布局显示选项、删除确认。
+- [x] 多窗口会话：会话 → 新建会话（F12），或 macOS Cmd+N；同一应用内各窗口独立连接站点、管理队列和日志，共享站点配置与语言，只有一个 Dock 图标。
+- [ ] 单窗口多标签会话 / 多站点同屏浏览。
+- [ ] 传输速率曲线、紧凑传输视图、Windows Jump List。
+- [x] 简体中文 / English 切换，应用提示与托盘随语言更新，已有日志和用户数据保持原文。
+- [ ] 主题、字体、颜色、工具栏定制及其他语言。
+- [ ] 声音事件、在线更新。
+
+站点和高级工具范围参见官方[站点菜单](https://www.flashfxp.com/webhelp/Topics/sites-menu.htm)、[站点右键菜单](https://www.flashfxp.com/webhelp/Topics/site_manager_right_click.htm)、[工具菜单](https://www.flashfxp.com/webhelp/Topics/tools-menu.htm)、[传输设置](https://www.flashfxp.com/webhelp/Topics/site-manager-ftp-transfer-tab.htm)、[自定义命令](https://www.flashfxp.com/webhelp/Topics/custom-command-list.htm)与[偏好设置](https://s.flashfxp.com/webhelp/Topics/preferences.htm)。
+
 ## 第一次使用
 
 ### 1. 创建连接
@@ -114,6 +199,8 @@ Rust Flash Ftp 是一款中文桌面文件传输客户端，面向需要经常�
 
 | 操作 | 入口 |
 | --- | --- |
+| 新建独立会话窗口 | F12 / macOS Cmd+N，或会话 → 新建会话 |
+| 切换界面语言 | 选项 → 语言 → 简体中文 / English |
 | 打开站点管理器 | F4，或站点菜单 |
 | 刷新本地与远程列表 | F5，或刷新按钮 |
 | 快速填写连接信息 | 主窗口快速连接栏 |
@@ -128,27 +215,11 @@ Rust Flash Ftp 是一款中文桌面文件传输客户端，面向需要经常�
 
 当前重点是交互式文件传输与站点管理。以下边界可帮助你判断是否适合现有工作环境：
 
-- 界面目前仅提供中文。
+- 界面提供简体中文与 English，可在“选项 → 语言”切换并保存选择。
 - SFTP 当前以密码认证为主，尚未提供独立密钥管理、Pageant 集成或客户端证书管理。
 - 目录比较与同步浏览用于辅助操作，不包含自动目录同步或定时任务调度。
 - macOS 和 Windows 已配置安装包构建；Linux 尚未纳入当前发布工作流。
 - 当前没有与原版 FlashFXP 完全相同的功能覆盖范围，具体能力以本项目实现为准。
-
-## 下载与安装
-
-在 [GitHub Releases](https://github.com/smildlzj/rust-flashfxp/releases) 下载已发布的安装包；如果尚无版本，可在 [Actions](https://github.com/smildlzj/rust-flashfxp/actions) 中手动运行工作流并下载 Artifacts。
-
-| 系统 | 架构 | 安装包 |
-| --- | --- | --- |
-| macOS | Apple Silicon（M 系列） | `Rust-Flash-Ftp-v<版本>-darwin-arm64.dmg` |
-| macOS | Intel | `Rust-Flash-Ftp-v<版本>-darwin-x64.dmg` |
-| Windows | x64 | `Rust-Flash-Ftp-v<版本>-windows-x64.exe` |
-
-macOS：打开 DMG，按照中文安装提示，将左侧应用图标拖入右侧 Applications。安装窗口提供浅色背景和 Retina 显示支持。当前使用 ad-hoc 签名，尚未经过 Apple 公证；首次打开可能需要在「系统设置 → 隐私与安全性」中允许运行。
-
-Windows：运行 EXE 安装程序。当前安装包未做商业代码签名，可能出现 SmartScreen 提示。
-
-安装包的云端构建配置已提供，具体构建结果以对应 Actions 运行记录为准。
 
 ## 常见问题
 
@@ -167,10 +238,6 @@ Windows：运行 EXE 安装程序。当前安装包未做商业代码签名，�
 ### 站点互传是否占用本机网络？
 
 会。数据经过本机内存中转，本机同时承担从源站点读取和向目标站点发送的流量。它减少了手动下载、再上传以及本地临时文件的步骤，但不会绕过本机网络。
-
-### 为什么发布页没有可下载的安装包？
-
-安装包需要在对应版本的 GitHub Actions 构建全部成功后上传。可以先查看 Actions 的运行状态；如果尚未发布版本，也可以手动运行构建，在成功运行的 Artifacts 中下载产物。
 
 ### 如何报告问题？
 
@@ -215,18 +282,6 @@ npm --prefix ui run test
 ```
 
 默认跳过依赖外部服务器的集成测试。测试环境与运行方式见 [测试规范](docs/testing.md)。
-
-## 自动构建与发布
-
-[Build desktop installers](.github/workflows/build-desktop.yml) 并行构建 macOS Apple Silicon、macOS Intel 和 Windows x64。
-
-- **手动打包**：Actions → Build desktop installers → Run workflow，选择分支运行。产物在 Artifacts 中保留 14 天。
-- **自动发布**：推送 `v*` 标签，标签必须与 `src-tauri/tauri.conf.json` 中的版本一致。全部构建成功后，上传安装包和 `SHA256SUMS.txt`，并发布 GitHub Release。
-- **普通提交**：推送分支不会自动触发打包。
-
-例如当前应用版本为 `0.1.0`，先推送包含工作流的提交，再创建并推送 `v0.1.0` 标签。也可以通过 GitHub 网页创建标签；在 Release 编辑页输入新标签后，需要发布 Release 才会实际创建该标签，仅保存草稿不会触发构建。
-
-详细发布步骤、版本更新和校验方式见 [开发指南](docs/development.md#github-actions-自动打包)。
 
 ## 项目结构
 

@@ -36,7 +36,7 @@ async fn exec_relay(task: &RelayTask, event_tx: &Sender<UiEvent>) -> Result<(), 
         match src.list(&parent).await {
             Ok(entries) => match entries.iter().find(|e| e.name == name) {
                 Some(e) => is_dir = e.is_dir,
-                None => return Err(format!("源路径不存在: {}", task.src_path)),
+                None => return Err(crate::localized!("源路径不存在: {}", "Source path does not exist: {}", task.src_path)),
             },
             Err(e) => return Err(e),
         }

@@ -2,6 +2,6 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "主窗口默认权限（事件监听与命令调用）",
-  "windows": ["main"],
+  "windows": ["main", "session-*"],
   "permissions": ["core:default"]
 }

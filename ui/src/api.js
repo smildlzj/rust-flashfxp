@@ -1,5 +1,6 @@
+import { t, getLocale, formatNumber } from './i18n.js'
 import { invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
+import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 
 let handler = null
 let listenerReady = null // 幂等：React.StrictMode 会执行两次 useEffect，重复 listen 会导致事件被处理两遍
@@ -11,11 +12,12 @@ export function onEvent(cb) {
 async function setupListener() {
   if (listenerReady) return listenerReady
   listenerReady = (async () => {
-    await listen('fx-event', (e) => {
+    const currentWindow = getCurrentWebviewWindow()
+    await currentWindow.listen('fx-event', (e) => {
       if (handler) handler(e.payload)
     })
     // 系统/前端文件拖放（拖入窗口 = 上传）
-    await listen('tauri://drag-drop', (e) => {
+    await currentWindow.listen('tauri://drag-drop', (e) => {
       if (handler) handler({ __dropped: e.payload })
     })
   })().catch((err) => { listenerReady = null; throw err })
@@ -28,6 +30,9 @@ export async function init() {
 
 // ---- commands ----
 export const api = {
+  setLanguage: language => invoke('set_language', { language }),
+  newSession: () => invoke('new_session'),
+  setWindowTitle: title => invoke('set_window_title', { title }),
   homeDir: () => invoke('home_dir'),
   pickFolder: () => invoke('pick_folder'),
   diskInfo: (path) => invoke('disk_info', { path }),
@@ -35,7 +40,7 @@ export const api = {
   quickConnect: (args) => invoke('quick_connect', args),
   connectSite: async (siteId) => {
     const site = (await invoke('sites_list')).find(s => s.id === siteId)
-    if (!site) throw new Error('站点不存在')
+    if (!site) throw new Error(t("site_does_not_exist"))
     let credentials = { usernameOverride: null, passwordOverride: null }
     if (site.username !== 'anonymous' && (site.loginType === 'prompt' || !site.username || !site.password)) {
       const answer = await new Promise(resolve => window.dispatchEvent(new CustomEvent('fx-credentials', {
@@ -92,19 +97,17 @@ export function remoteParent(p) {
 export function humanSize(n) {
   n = Number(n) || 0
   if (n === 0) return '0'
-  if (n < 1024) return `${n} B`
+  if (n < 1024) return `${formatNumber(n)} B`
   if (n < 1024 * 1024) {
     const v = n / 1024
-    return `${v < 10 ? v.toFixed(1) : Math.round(v)} KB`
+    return `${v < 10 ? formatNumber(v, getLocale(), { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : formatNumber(Math.round(v))} KB`
   }
-  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(2)} MB`
-  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`
+  if (n < 1024 * 1024 * 1024) return `${formatNumber(n / 1024 / 1024, getLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MB`
+  return `${formatNumber(n / 1024 / 1024 / 1024, getLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 })} GB`
 }
 
 /* FlashFXP 原版：2026/6/28 21:54:10（斜杠、月/日/时不补零、含秒） */
 export function fmtTime(ts) {
   if (!ts) return ''
-  const d = new Date(ts * 1000)
-  const p = (x) => String(x).padStart(2, '0')
-  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+  return new Intl.DateTimeFormat(getLocale(), { year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date(ts * 1000))
 }

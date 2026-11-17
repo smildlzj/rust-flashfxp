@@ -50,27 +50,27 @@ impl SftpBackend {
         let mut handle =
             client::connect(Arc::new(config), (site.host.as_str(), site.port), ClientHandler)
                 .await
-                .map_err(|e| format!("连接失败: {e}"))?;
+                .map_err(|e| crate::localized!("连接失败: {e}", "Connection failed: {e}"))?;
         let user = site.username.as_deref().unwrap_or("anonymous");
         let pass = site.password.as_deref().unwrap_or("");
         let authed = handle
             .authenticate_password(user, pass)
             .await
-            .map_err(|e| format!("SFTP 认证失败: {e}"))?;
+            .map_err(|e| crate::localized!("SFTP 认证失败: {e}", "SFTP authentication failed: {e}"))?;
         if !authed {
-            return Err("SFTP 认证失败: 用户名或密码错误".into());
+            return Err(crate::localized!("SFTP 认证失败: 用户名或密码错误", "SFTP authentication failed: incorrect username or password"));
         }
         let channel = handle
             .channel_open_session()
             .await
-            .map_err(|e| format!("打开通道失败: {e}"))?;
+            .map_err(|e| crate::localized!("打开通道失败: {e}", "Failed to open channel: {e}"))?;
         channel
             .request_subsystem(true, "sftp")
             .await
-            .map_err(|e| format!("请求 SFTP 子系统失败: {e}"))?;
+            .map_err(|e| crate::localized!("请求 SFTP 子系统失败: {e}", "Failed to request SFTP subsystem: {e}"))?;
         let sftp = SftpSession::new(channel.into_stream())
             .await
-            .map_err(|e| format!("初始化 SFTP 失败: {e}"))?;
+            .map_err(|e| crate::localized!("初始化 SFTP 失败: {e}", "Failed to initialize SFTP: {e}"))?;
         let cwd = sftp
             .canonicalize(".")
             .await
@@ -88,12 +88,12 @@ impl SftpBackend {
 
     pub async fn list_with_path(&mut self, path: &str) -> Result<(String, Vec<Entry>), String> {
         let canonical = self.sftp.canonicalize(path).await
-            .map_err(|e| format!("解析远程目录失败: {e}"))?;
+            .map_err(|e| crate::localized!("解析远程目录失败: {e}", "Failed to resolve remote directory: {e}"))?;
         let rd = self
             .sftp
             .read_dir(&canonical)
             .await
-            .map_err(|e| format!("列出目录失败: {e}"))?;
+            .map_err(|e| crate::localized!("列出目录失败: {e}", "Failed to list directory: {e}"))?;
         let mut out = Vec::new();
         for entry in rd {
             let name = entry.file_name();
@@ -121,7 +121,7 @@ impl SftpBackend {
         self.sftp
             .create_dir(path)
             .await
-            .map_err(|e| format!("创建目录失败: {e}"))
+            .map_err(|e| crate::localized!("创建目录失败: {e}", "Failed to create directory: {e}"))
     }
 
     pub async fn delete(&mut self, path: &str) -> Result<(), String> {
@@ -130,14 +130,14 @@ impl SftpBackend {
             Ok(m) if m.file_type().is_dir() => self.sftp.remove_dir(path).await,
             _ => self.sftp.remove_file(path).await,
         };
-        r.map_err(|e| format!("删除失败: {e}"))
+        r.map_err(|e| crate::localized!("删除失败: {e}", "Deletion failed: {e}"))
     }
 
     pub async fn rename(&mut self, from: &str, to: &str) -> Result<(), String> {
         self.sftp
             .rename(from, to)
             .await
-            .map_err(|e| format!("重命名失败: {e}"))
+            .map_err(|e| crate::localized!("重命名失败: {e}", "Rename failed: {e}"))
     }
 
     pub async fn size(&mut self, path: &str) -> Option<u64> {
@@ -171,12 +171,12 @@ impl SftpBackend {
             .sftp
             .open(remote)
             .await
-            .map_err(|e| format!("打开远程文件失败: {e}"))?;
+            .map_err(|e| crate::localized!("打开远程文件失败: {e}", "Failed to open remote file: {e}"))?;
         if offset > 0 {
             remote_file
                 .seek(std::io::SeekFrom::Start(offset))
                 .await
-                .map_err(|e| format!("远程文件定位失败: {e}"))?;
+                .map_err(|e| crate::localized!("远程文件定位失败: {e}", "Failed to seek remote file: {e}"))?;
         }
         let mut local_file = tokio::fs::OpenOptions::new()
             .create(true)
@@ -184,25 +184,25 @@ impl SftpBackend {
             .append(offset > 0)
             .open(local)
             .await
-            .map_err(|e| format!("打开本地文件失败: {e}"))?;
+            .map_err(|e| crate::localized!("打开本地文件失败: {e}", "Failed to open local file: {e}"))?;
         let mut buf = vec![0u8; 256 * 1024];
         let mut transferred = base + offset;
         loop {
             let n = remote_file
                 .read(&mut buf)
                 .await
-                .map_err(|e| format!("读取数据失败: {e}"))?;
+                .map_err(|e| crate::localized!("读取数据失败: {e}", "Failed to read data: {e}"))?;
             if n == 0 {
                 break;
             }
             local_file
                 .write_all(&buf[..n])
                 .await
-                .map_err(|e| format!("写入本地文件失败: {e}"))?;
+                .map_err(|e| crate::localized!("写入本地文件失败: {e}", "Failed to write local file: {e}"))?;
             transferred += n as u64;
             let _ = event_tx.send(UiEvent::TransferProgress { id, transferred });
         }
-        local_file.flush().await.map_err(|e| format!("写入失败: {e}"))?;
+        local_file.flush().await.map_err(|e| crate::localized!("写入失败: {e}", "Write failed: {e}"))?;
         Ok(())
     }
 
@@ -236,15 +236,15 @@ impl SftpBackend {
             .sftp
             .open_with_flags(remote, flags)
             .await
-            .map_err(|e| format!("打开远程文件失败: {e}"))?;
+            .map_err(|e| crate::localized!("打开远程文件失败: {e}", "Failed to open remote file: {e}"))?;
         let mut local_file = tokio::fs::File::open(local)
             .await
-            .map_err(|e| format!("打开本地文件失败: {e}"))?;
+            .map_err(|e| crate::localized!("打开本地文件失败: {e}", "Failed to open local file: {e}"))?;
         if offset > 0 {
             local_file
                 .seek(std::io::SeekFrom::Start(offset))
                 .await
-                .map_err(|e| format!("本地文件定位失败: {e}"))?;
+                .map_err(|e| crate::localized!("本地文件定位失败: {e}", "Failed to seek local file: {e}"))?;
         }
         let mut buf = vec![0u8; 256 * 1024];
         let mut transferred = base + offset;
@@ -252,21 +252,21 @@ impl SftpBackend {
             let n = local_file
                 .read(&mut buf)
                 .await
-                .map_err(|e| format!("读取本地文件失败: {e}"))?;
+                .map_err(|e| crate::localized!("读取本地文件失败: {e}", "Failed to read local file: {e}"))?;
             if n == 0 {
                 break;
             }
             remote_file
                 .write_all(&buf[..n])
                 .await
-                .map_err(|e| format!("发送数据失败: {e}"))?;
+                .map_err(|e| crate::localized!("发送数据失败: {e}", "Failed to send data: {e}"))?;
             transferred += n as u64;
             let _ = event_tx.send(UiEvent::TransferProgress { id, transferred });
         }
         remote_file
             .flush()
             .await
-            .map_err(|e| format!("上传收尾失败: {e}"))?;
+            .map_err(|e| crate::localized!("上传收尾失败: {e}", "Failed to finish upload: {e}"))?;
         Ok(())
     }
 
@@ -282,14 +282,14 @@ impl SftpBackend {
             .sftp
             .open(remote)
             .await
-            .map_err(|e| format!("打开远程源文件失败: {e}"))?;
+            .map_err(|e| crate::localized!("打开远程源文件失败: {e}", "Failed to open remote source file: {e}"))?;
         let mut buf = vec![0u8; 256 * 1024];
         let mut transferred = base;
         loop {
             let n = file
                 .read(&mut buf)
                 .await
-                .map_err(|e| format!("读取源数据失败: {e}"))?;
+                .map_err(|e| crate::localized!("读取源数据失败: {e}", "Failed to read source data: {e}"))?;
             if n == 0 {
                 break;
             }
@@ -316,14 +316,14 @@ impl SftpBackend {
             .sftp
             .open_with_flags(remote, OpenFlags::WRITE | OpenFlags::CREATE | OpenFlags::TRUNCATE)
             .await
-            .map_err(|e| format!("打开远程目标文件失败: {e}"))?;
+            .map_err(|e| crate::localized!("打开远程目标文件失败: {e}", "Failed to open remote destination file: {e}"))?;
         let mut complete = false;
         while let Some(msg) = data_rx.recv().await {
             match msg {
                 crate::bus::PipeMsg::Data(b) => {
                     file.write_all(&b)
                         .await
-                        .map_err(|e| format!("写入目标数据失败: {e}"))?;
+                        .map_err(|e| crate::localized!("写入目标数据失败: {e}", "Failed to write destination data: {e}"))?;
                 }
                 crate::bus::PipeMsg::End => {
                     complete = true;
@@ -332,9 +332,9 @@ impl SftpBackend {
             }
         }
         if !complete {
-            return Err("源端读取中断".into());
+            return Err(crate::localized!("源端读取中断", "Source read interrupted"));
         }
-        file.flush().await.map_err(|e| format!("目标写入收尾失败: {e}"))?;
+        file.flush().await.map_err(|e| crate::localized!("目标写入收尾失败: {e}", "Failed to finish writing destination: {e}"))?;
         Ok(())
     }
 }

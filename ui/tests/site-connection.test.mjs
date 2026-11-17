@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
+import * as i18n from '../src/i18n.js'
 
 async function setup(site, answer) {
   const calls = []
@@ -13,7 +14,11 @@ async function setup(site, answer) {
   const source = await readFile(new URL('../src/api.js', import.meta.url), 'utf8')
   const module = new vm.SourceTextModule(source, { context })
   await module.link(async specifier => {
-    const key = specifier.endsWith('/core') ? 'invoke' : 'listen'
+    if (specifier.includes('i18n')) return new vm.SyntheticModule(Object.keys(i18n), function () {
+      for (const [key, value] of Object.entries(i18n)) this.setExport(key, value)
+    }, { context })
+    if (specifier.endsWith('/webviewWindow')) return new vm.SyntheticModule(['getCurrentWebviewWindow'], function () { this.setExport('getCurrentWebviewWindow', () => ({ listen: async () => () => {} })) }, { context })
+    const key = 'invoke'
     const dependency = new vm.SyntheticModule([key], function () {
       this.setExport(key, async (command, args) => {
         calls.push({ command, args })
