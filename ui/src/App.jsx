@@ -3,6 +3,8 @@ import { useLanguage } from './LanguageContext.jsx'
 import CredentialsDialog from './components/CredentialsDialog.jsx'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import FilePane from './components/FilePane.jsx'
+import BookmarkManager from './components/BookmarkManager.jsx'
+import FiltersDialog from './components/FiltersDialog.jsx'
 import DirTree from './components/DirTree.jsx'
 import SiteManager from './components/SiteManager.jsx'
 import ProxyManager from './components/ProxyManager.jsx'
@@ -180,6 +182,48 @@ export default function App() {
   const bootLogged = useRef(false) // StrictMode 下避免启动日志重复
   const ctxMenu = useWinContextMenu()
   const [appVersion, setAppVersion] = useState('…')
+  const [highlightRules, setHighlightRules] = useState([])
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const [bookmarkOpen, setBookmarkOpen] = useState(false)
+  const [bookmarkMode, setBookmarkMode] = useState('manage')
+  const [bookmarkSiteId, setBookmarkSiteId] = useState(null)
+  useEffect(() => {
+    let active = true
+    let unlisten
+    const reload = () => api.highlights().then(rules => { if (active) setHighlightRules(rules) })
+      .catch(error => { if (active) showNotice(errorMessage(error)) })
+    reload()
+    api.onBrowsingChanged(kind => { if (kind === 'highlights') reload() })
+      .then(stop => { if (active) unlisten = stop; else stop() })
+      .catch(error => { if (active) showNotice(errorMessage(error)) })
+    return () => { active = false; unlisten?.() }
+  }, [])
+  const manageBookmarks = (mode = 'manage') => {
+    setBookmarkSiteId(currentSite?.id > 0 ? currentSite.id : null)
+    setBookmarkMode(mode)
+    setBookmarkOpen(true)
+  }
+  const activateBookmark = async bookmark => {
+    try {
+      const sync = await api.openBookmark(bookmark.id)
+      if (sync !== 'default') setSyncBrowse(sync === 'enabled')
+    } catch (error) { showNotice(errorMessage(error)) }
+  }
+  const openBookmarks = async event => {
+    event.preventDefault(); event.stopPropagation()
+    const rect = event.currentTarget.getBoundingClientRect()
+    const anchor = { clientX: rect.left, clientY: rect.bottom, preventDefault() {}, stopPropagation() {} }
+    try {
+      const bookmarks = await api.bookmarks()
+      ctxMenu.openMenu(anchor, [
+        ...bookmarks.map(bookmark => ({ label: bookmark.caption, act: () => activateBookmark(bookmark) })),
+        ...(bookmarks.length ? [{ sep: true }] : [{ label: t('bookmark_empty'), disabled: true }]),
+        { label: t('bookmark_add_current'), act: () => manageBookmarks('add') },
+        { label: t('bookmark_manage'), act: () => manageBookmarks() },
+      ])
+    } catch (error) { showNotice(errorMessage(error)) }
+  }
+
   useEffect(() => {
     if (!aboutOpen) return
     let cancelled = false
@@ -508,7 +552,7 @@ export default function App() {
     setConnectMenuOpen(false)
     try {
       if (!await api.connectSite(s.id)) return
-      setCurrentSite({ host: s.host, port: Number(s.port) || 21, name: s.name })
+      setCurrentSite({ id: s.id, host: s.host, port: Number(s.port) || 21, name: s.name })
       applySiteLocalPath(s)
     } catch (e) { showNotice(t("connection_failed_value", [e])) }
   }
@@ -580,12 +624,17 @@ export default function App() {
     const onKey = (e) => {
       const t = e.target
       const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
-      const dialogOpen = siteManagerOpen || proxyManagerOpen || relayOpen || optionsOpen || aboutOpen || !!prompt
+      const dialogOpen = siteManagerOpen || proxyManagerOpen || relayOpen || optionsOpen || aboutOpen || bookmarkOpen || filtersOpen || !!prompt
       if (e.key === 'Escape') {
         if (dialogOpen) {
           setSiteManagerOpen(false); setProxyManagerOpen(false); setRelayOpen(false)
-          setAboutOpen(false); setPrompt(null)
+          setAboutOpen(false); setBookmarkOpen(false); setFiltersOpen(false); setPrompt(null)
         }
+        return
+      }
+      if (!typing && !dialogOpen && e.ctrlKey && e.key.toLowerCase() === 'b') {
+        e.preventDefault()
+        document.querySelector(`[data-bookmark-pane="${activePane}"]`)?.click()
         return
       }
       if (typing || dialogOpen || e.metaKey || e.ctrlKey || e.altKey) return
@@ -718,7 +767,7 @@ export default function App() {
         }
         case 'reset':
           setSiteManagerOpen(false); setProxyManagerOpen(false); setRelayOpen(false)
-          setAboutOpen(false); setPrompt(null)
+          setAboutOpen(false); setBookmarkOpen(false); setFiltersOpen(false); setPrompt(null)
           setShowTree(true); setShowBottom(true); setBottomTab('both')
           setShowQuick(true); setSyncBrowse(false)
           api.homeDir().then(p => { if (p) api.localList(p) }).catch(() => {})
@@ -882,6 +931,7 @@ export default function App() {
       ] },
       { label: t("preferences"), key: 'F6', act: () => setOptionsOpen(true) },
       { label: t("proxy_settings_p"), act: () => setProxyManagerOpen(true) },
+      { label: t('filters') + '…', act: () => setFiltersOpen(true) },
     ]},
     { name: t("queue_z"), items: [
       { label: t("show_hide_queue_and_log"), act: () => setShowBottom(v => !v) },
@@ -1018,13 +1068,13 @@ export default function App() {
       <div className="fx-address-row" style={{ gridTemplateColumns: gridCols }}>
         <div className="fx-address-cell left" style={{ gridColumn: leftCol }}>
           <IconTip title={t("site_manager_2")}><button className="fx-address-icon" onClick={() => setSiteManagerOpen(true)}><Ico name="miniComputer" size={17} /></button></IconTip>
-          <IconTip title={t("quick_connect_3")}><button className="fx-address-icon" onClick={() => document.getElementById('qc-host')?.focus()}><Ico name="star" size={17} /></button></IconTip>
+          <IconTip title={t('bookmarks')}><button className="fx-address-icon" data-bookmark-pane="local" aria-label={t('bookmarks')} onClick={openBookmarks}><Ico name="star" size={17} /></button></IconTip>
           <IconTip title={t("parent_directory")}><button className="fx-address-icon" onClick={localUp}><Ico name="greenUp" size={17} /></button></IconTip>
           <AddressCombo value={localDir} onGo={navLocal} history={localHistory} />
         </div>
         <div className="fx-address-cell right" style={{ gridColumn: rightCol }}>
           <IconTip title={t("site_manager_2")}><button className="fx-address-icon" onClick={() => setSiteManagerOpen(true)}><Ico name="miniComputer" size={17} /></button></IconTip>
-          <IconTip title={t("remote_home_directory")}><button className="fx-address-icon" onClick={() => api.remoteList('/')}><Ico name="star" size={17} /></button></IconTip>
+          <IconTip title={t('bookmarks')}><button className="fx-address-icon" data-bookmark-pane="remote" aria-label={t('bookmarks')} disabled={!connected} onClick={openBookmarks}><Ico name="star" size={17} /></button></IconTip>
           <IconTip title={t("parent_directory")}><button className="fx-address-icon" onClick={remoteUp}><Ico name="greenUp" size={17} /></button></IconTip>
           <AddressCombo value={remoteDir || ''} onGo={(p) => api.remoteList(p)} disabled={!connected} history={remoteHistory} />
         </div>
@@ -1034,7 +1084,7 @@ export default function App() {
       <div className="fx-main" style={{ gridTemplateColumns: gridCols }}>
         {showTree && homePath && <DirTree home={homePath} onNavigate={navLocal}
           currentPath={localDir} onContextMenu={ctxMenu.openMenu} />}
-        <FilePane pane="local" title={t("local_browser")} entries={sortedLocal} selected={localSel}
+        <FilePane highlightRules={highlightRules} pane="local" title={t("local_browser")} entries={sortedLocal} selected={localSel}
           marks={localMarks} address={localDir} connected={connected} diskFree={diskFree}
           sort={sortLocal} onNavigate={localUp} onRefresh={refreshLocal}
           onSelect={(i) => { setLocalSel(i); setActivePane('local') }}
@@ -1042,7 +1092,7 @@ export default function App() {
           onAddressGo={navLocal} onHome={() => navLocal(homePath)}
           onContextMenu={ctxMenu.openMenu}
           onDropTransfer={(dir, name, isDir) => enqueue(dir, name, isDir)} />
-        <FilePane pane="remote" title={t("remote_browser")}
+        <FilePane highlightRules={highlightRules} pane="remote" title={t("remote_browser")}
           entries={sortedRemote} selected={remoteSel}
           marks={remoteMarks} address={remoteDir || ''} connected={connected && !!remoteDir}
           host={currentSite ? `${currentSite.host}` : ''} sort={sortRemote}
@@ -1145,6 +1195,9 @@ export default function App() {
 
       {/* ===== 对话框 ===== */}
       <CredentialsDialog />
+      <BookmarkManager open={bookmarkOpen} onOpenChange={setBookmarkOpen} siteId={bookmarkSiteId}
+        localPath={localDir || ''} remotePath={connected ? remoteDir || '' : ''} initialAdd={bookmarkMode === 'add'} />
+      <FiltersDialog open={filtersOpen} onOpenChange={setFiltersOpen} />
       <SiteManager open={siteManagerOpen} onOpenChange={setSiteManagerOpen}
         onConnected={(site) => { setCurrentSite(site); applySiteLocalPath(site) }} />
       <ProxyManager open={proxyManagerOpen} onOpenChange={setProxyManagerOpen} />

@@ -46,6 +46,17 @@ pub fn atomic_write(path: &Path, contents: &[u8]) -> std::io::Result<()> {
 mod tests {
     use super::*;
     #[test]
+    fn failed_connection_keeps_local_bookmarks_in_local_scope() {
+        let site: Site = serde_json::from_value(serde_json::json!({
+            "id":5,"name":"saved","host":"offline.example","port":21,"protocol":"ftp",
+            "username":"alice","encoding":"utf-8","passiveMode":true,"tlsAcceptInvalid":false
+        })).unwrap();
+        assert_eq!(super::bookmark_scope_for(Some(&site), false), "local");
+        assert_eq!(super::bookmark_scope_for(Some(&site), true), "site:5");
+        assert_eq!(super::bookmark_scope_for(None, true), "local");
+    }
+
+    #[test]
     fn queue_identity_tracks_endpoint_but_never_password() {
         let mut site: Site = serde_json::from_value(serde_json::json!({
             "id":1,"name":"test","host":"EXAMPLE.COM","port":21,"protocol":"ftp",
@@ -111,4 +122,13 @@ pub fn restored_cancellation(
         "id": id, "ok": false, "cancelled": true,
         "error": flashfxp_lib::localized!("已取消", "Cancelled")
     }}))
+}
+
+/// 保存的站点配置并不代表连接成功；离线时必须使用本地书签。
+pub fn bookmark_scope_for(site: Option<&Site>, connected: bool) -> String {
+    match site.filter(|_| connected) {
+        Some(site) if site.id > 0 => format!("site:{}", site.id),
+        Some(site) => format!("quick:{}", site_key(site)),
+        None => "local".into(),
+    }
 }

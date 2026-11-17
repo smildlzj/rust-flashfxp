@@ -12,6 +12,7 @@ use std::sync::{
 pub struct Session {
     pub lease: crate::instance::Instance,
     pub cmd_tx: tokio::sync::mpsc::UnboundedSender<UiCmd>,
+    pub connected: std::sync::atomic::AtomicBool,
     pub current_site: Mutex<Option<(Site, Option<Proxy>)>>,
     pub tasks: Mutex<HashMap<u64, i64>>,
     pub restored: Mutex<HashSet<u64>>,
@@ -171,6 +172,7 @@ mod tests {
                 lease: crate::instance::Instance::create(directory.clone()).unwrap(),
                 cmd_tx,
                 current_site: Mutex::new(None),
+                connected: std::sync::atomic::AtomicBool::new(false),
                 tasks: Mutex::new(HashMap::new()),
                 restored: Mutex::new(HashSet::new()),
                 cancelled: Mutex::new(HashSet::new()),

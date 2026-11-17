@@ -1,4 +1,5 @@
 import { t } from '../i18n.js'
+import { BookmarkPanel } from './BookmarkManager.jsx'
 import React, { useEffect, useState } from 'react'
 import { api } from '../api.js'
 import { Ico } from '../winicons.jsx'
@@ -267,10 +268,13 @@ export default function SiteManager({ open, onOpenChange, onConnected }) {
             { value: 'general', label: t("general") },
             { value: 'advanced', label: t("advanced") },
             { value: 'options', label: t("options") },
+            { value: 'bookmarks', label: t('bookmarks') },
           ]} />
           <div className="fx-tab-content min-h-0 flex-1 overflow-auto">
             {edit
-              ? (tab === 'general' ? general() : tab === 'advanced' ? advanced() : options())
+              ? (tab === 'general' ? general() : tab === 'advanced' ? advanced() : tab === 'bookmarks'
+                ? (edit.id ? <BookmarkPanel key={edit.id} siteId={edit.id} localPath={edit.localPath || ''} remotePath={edit.remotePath || ''} />
+                  : <div className="fx-center-hint">{t('bookmark_save_site_first')}</div>) : options())
               : <div className="fx-center-hint">{t("select_a_site_on_the_left_or_click_new_site")}<br />{t("double_click_a_site_to_connect")}</div>}
           </div>
         </div>

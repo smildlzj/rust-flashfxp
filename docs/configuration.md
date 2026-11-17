@@ -8,7 +8,7 @@
 
 ### `~/.rust-flashfxp/flashfxp.db`
 
-rusqlite 数据库，表：`sites` / `groups` / `proxies` / `queue_items` / `app_config`。站点与代理密码以 AES-256-GCM 固定密钥加密落库（`src/store/crypto.rs`）。
+rusqlite 数据库，表：`sites` / `groups` / `proxies` / `queue_items` / `app_config` / `bookmarks` / `highlight_rules`。站点与代理密码以 AES-256-GCM 固定密钥加密落库（`src/store/crypto.rs`）。
 
 > ⚠️ 这是用户真实站点数据（含密码）。测试站点/代理自建自清，不得误删用户站点（见 CLAUDE.md 协作约束）。
 
@@ -36,3 +36,7 @@ WebView localStorage 的 `fx.ui.language` 保存 `zh-CN` 或 `en`，默认简体
 会话 → 新建会话（F12）与原生 Cmd+N 在当前进程创建 `session-*` WebviewWindow。`main` 与每个新窗口分别拥有后台命令通道、当前站点、队列租约和运行时任务映射；站点/代理配置及语言为应用共享。事件定向发送给所属 WebviewWindow，worker 任务使用全局唯一 ID，界面使用窗口内 ID。
 
 关闭窗口会隐藏并保留其连接和任务；Dock / 托盘恢复最近使用窗口。连接成功时原生窗口标题显示“站点名 — Rust Flash Ftp”，快速连接显示“主机:端口 — Rust Flash Ftp”，断开时恢复默认标题；Dock 和原生 Window 菜单使用该标题。退出结束整个应用及所有会话。多个会话窗口只使用一个 Dock 图标。
+
+## 目录书签与模式高亮
+
+书签和高亮持久化、作用域、匹配规则及多窗口保存冲突处理见 [目录书签与模式高亮](architecture/browsing.md)。

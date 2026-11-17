@@ -16,7 +16,7 @@ test('session and drop listeners subscribe only to the current window, once', as
   const subscriptions = []
   const context = vm.createContext({})
   const module = new vm.SourceTextModule(await readFile(new URL('../src/api.js', import.meta.url), 'utf8'), { context })
-  await module.link(name => dependency(context, name.includes('i18n') ? i18n : name.endsWith('/core') ? { invoke() {} } : {
+  await module.link(name => dependency(context, name.includes('i18n') ? i18n : name.endsWith('/core') ? { invoke() {} } : name.endsWith('/event') ? { listen: async () => () => {} } : {
     getCurrentWebviewWindow: () => ({ listen: async (event, callback) => subscriptions.push({ event, callback, target: 'session-2' }) }),
   }))
   await module.evaluate()

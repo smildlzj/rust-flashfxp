@@ -148,7 +148,8 @@ This checklist follows the categories in the [official FlashFXP feature list](ht
 - [ ] Unix permission changes, recursive chmod, and file attribute editing.
 - [ ] Same-side file copying/moving, batch multi-selection, and transfer-as-name operations.
 - [ ] Remote viewing/editing, automatic upload on save, multi-file editing, and editor associations.
-- [ ] Folder bookmarks, pattern highlighting, marked lists, and filtering.
+- [x] Folder bookmarks with local/remote paths and synchronized-browsing settings; ordered filename-mask color rules.
+- [ ] Marked lists and file filtering.
 - [ ] Remote directory caching and STAT fast listings.
 - [ ] Downloads by explicit path and clipboard URL monitoring with automatic transfers.
 
@@ -186,6 +187,8 @@ Additional reference: FlashFXP's [Sites menu](https://www.flashfxp.com/webhelp/T
 | Refresh both file lists | F5 or the refresh button |
 | Enter a temporary connection | Quick Connect bar |
 | Navigate directories | Directory tree or address bar |
+| Folder bookmarks | Star beside an address bar / Ctrl+B; Site Manager → Bookmarks |
+| Filename pattern colors | Options → Filters → Highlights |
 | Upload, download, rename, delete | File list actions and context menus |
 | View transfer progress | Queue panel |
 | Investigate connection/transfer issues | Log panel |

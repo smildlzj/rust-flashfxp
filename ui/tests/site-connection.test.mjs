@@ -18,6 +18,7 @@ async function setup(site, answer) {
       for (const [key, value] of Object.entries(i18n)) this.setExport(key, value)
     }, { context })
     if (specifier.endsWith('/webviewWindow')) return new vm.SyntheticModule(['getCurrentWebviewWindow'], function () { this.setExport('getCurrentWebviewWindow', () => ({ listen: async () => () => {} })) }, { context })
+    if (specifier.endsWith('/event')) return new vm.SyntheticModule(['listen'], function () { this.setExport('listen', async () => () => {}) }, { context })
     const key = 'invoke'
     const dependency = new vm.SyntheticModule([key], function () {
       this.setExport(key, async (command, args) => {

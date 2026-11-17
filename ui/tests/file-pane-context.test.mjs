@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
 import React from 'react'
+import * as highlights from '../src/highlights.js'
 import * as i18n from '../src/i18n.js'
 import { transformWithEsbuild } from 'vite'
 
@@ -13,6 +14,7 @@ const module = new vm.SourceTextModule(code, { context })
 await module.link(async name => {
   const exports = name === 'react'
     ? { default: React, useState: initial => [initial, () => {}] }
+    : name.includes('highlights') ? highlights
     : name.includes('i18n') ? i18n
     : name.includes('winicons') ? { Ico: () => null }
     : { humanSize: String, fmtTime: String }

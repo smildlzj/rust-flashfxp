@@ -1,5 +1,6 @@
 import { t, getLocale, formatNumber } from './i18n.js'
 import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 
 let handler = null
@@ -30,6 +31,13 @@ export async function init() {
 
 // ---- commands ----
 export const api = {
+  bookmarks: (siteId = null) => invoke('bookmarks_list', { siteId }),
+  saveBookmark: (bookmark, siteId = null) => invoke('bookmark_save', { bookmark, siteId }),
+  deleteBookmark: (id, siteId = null) => invoke('bookmark_delete', { id, siteId }),
+  openBookmark: id => invoke('bookmark_open', { id }),
+  highlights: () => invoke('highlight_rules'),
+  saveHighlights: (rules, expected) => invoke('highlight_rules_save', { rules, expected }),
+  onBrowsingChanged: handler => listen('browsing-changed', event => handler(event.payload)),
   appVersion: () => invoke('app_version'),
   setLanguage: language => invoke('set_language', { language }),
   newSession: () => invoke('new_session'),

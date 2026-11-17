@@ -1,4 +1,6 @@
 mod crypto;
+mod browsing;
+pub use browsing::{Bookmark, HighlightRule};
 
 use rusqlite::Connection;
 
@@ -25,6 +27,21 @@ fn db_dir() -> anyhow::Result<std::path::PathBuf> {
 fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch(
         "
+        CREATE TABLE IF NOT EXISTS bookmarks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            scope TEXT NOT NULL,
+            caption TEXT NOT NULL,
+            remote_path TEXT NOT NULL,
+            local_path TEXT NOT NULL,
+            sync_browsing TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS bookmarks_scope ON bookmarks(scope);
+        CREATE TABLE IF NOT EXISTS highlight_rules (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            mask TEXT NOT NULL,
+            color TEXT NOT NULL,
+            position INTEGER NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS groups (
             id INTEGER PRIMARY KEY,
             parent_id INTEGER REFERENCES groups(id) ON DELETE CASCADE,
@@ -285,7 +302,10 @@ impl SiteRepo {
     }
 
     pub fn delete_site(&self, id: i64) -> anyhow::Result<()> {
-        self.conn.execute("DELETE FROM sites WHERE id=?1", [id])?;
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute("DELETE FROM bookmarks WHERE scope=?1", [format!("site:{id}")])?;
+        tx.execute("DELETE FROM sites WHERE id=?1", [id])?;
+        tx.commit()?;
         Ok(())
     }
 
@@ -473,7 +493,7 @@ impl SiteRepo {
 mod tests {
     use super::*;
 
-    fn memory_repo() -> SiteRepo {
+    pub(super) fn memory_repo() -> SiteRepo {
         let conn = Connection::open_in_memory().unwrap();
         init_schema(&conn).unwrap();
         SiteRepo { conn, cipher: Cipher::new() }

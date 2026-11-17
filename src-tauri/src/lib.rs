@@ -12,8 +12,12 @@ fn session(window: &WebviewWindow) -> Result<Arc<Session>, String> {
     session_state::get(window.label())
 }
 fn current_site(window: &WebviewWindow) -> Result<(Site, Option<Proxy>), String> {
-    session(window)?.current_site.lock().map_err(|e| e.to_string())?.clone()
-        .ok_or_else(|| flashfxp_lib::localized!("未连接目标站点", "No destination site connected"))
+    let session = session(window)?;
+    if !session.connected.load(std::sync::atomic::Ordering::Acquire) {
+        return Err(flashfxp_lib::localized!("未连接目标站点", "No destination site connected"));
+    }
+    let result = session.current_site.lock().map_err(|e| e.to_string())?.clone();
+    result.ok_or_else(|| flashfxp_lib::localized!("未连接目标站点", "No destination site connected"))
 }
 fn owner(window: &WebviewWindow) -> Result<String, String> { Ok(session(window)?.lease.id.clone()) }
 
@@ -113,7 +117,7 @@ fn attach_session(app: &AppHandle, label: &str) -> Result<(), String> {
     let (cmd_tx, cmd_rx) = unbounded_channel::<UiCmd>();
     let (event_tx, event_rx) = std_mpsc::channel::<UiEvent>();
     let session = Arc::new(Session {
-        lease, cmd_tx, current_site: Mutex::new(None), tasks: Mutex::new(Default::default()),
+        lease, cmd_tx, current_site: Mutex::new(None), connected: std::sync::atomic::AtomicBool::new(false), tasks: Mutex::new(Default::default()),
         restored: Mutex::new(Default::default()), cancelled: Mutex::new(Default::default()),
         ids: Mutex::new(Default::default()),
     });
@@ -130,6 +134,11 @@ fn attach_session(app: &AppHandle, label: &str) -> Result<(), String> {
                 Err(_) => None,
             };
             let Some(event) = event else { continue };
+            match &event {
+                UiEvent::Connected => session.connected.store(true, std::sync::atomic::Ordering::Release),
+                UiEvent::Disconnected => session.connected.store(false, std::sync::atomic::Ordering::Release),
+                _ => {}
+            }
             let mut payload = serde_json::to_value(&event).expect("event serialization");
             if let UiEvent::TransferFinished { id, ok, error } = &event {
                 let cancelled = session.cancelled.lock().map(|mut set| set.remove(id)).unwrap_or(false) && !ok;
@@ -205,6 +214,12 @@ pub fn run() {
             set_language,
             set_window_title,
             app_version,
+            bookmarks_list,
+            bookmark_save,
+            bookmark_delete,
+            bookmark_open,
+            highlight_rules,
+            highlight_rules_save,
             quick_connect,
             connect_site,
             disconnect,
@@ -271,6 +286,7 @@ fn quick_connect(window: WebviewWindow, host: String, port: u16, user: String, p
         login_type: "normal".into(),
         timezone_offset_minutes: None,
     };
+    session(&window)?.connected.store(false, std::sync::atomic::Ordering::Release);
     *session(&window)?.current_site.lock().map_err(|e| e.to_string())? = Some((site.clone(), None));
     send_cmd(&window, UiCmd::Connect { site, proxy: None })
 }
@@ -290,12 +306,14 @@ fn connect_site(window: WebviewWindow, site_id: i64, username_override: Option<S
     let proxy = site
         .proxy_id
         .and_then(|pid| repo.list_proxies().ok().and_then(|ps| ps.into_iter().find(|p| p.id == pid)));
+    session(&window)?.connected.store(false, std::sync::atomic::Ordering::Release);
     *session(&window)?.current_site.lock().map_err(|e| e.to_string())? = Some((site.clone(), proxy.clone()));
     send_cmd(&window, UiCmd::Connect { site, proxy })
 }
 
 #[tauri::command]
 fn disconnect(window: WebviewWindow) -> Result<(), String> {
+    session(&window)?.connected.store(false, std::sync::atomic::Ordering::Release);
     *session(&window)?.current_site.lock().map_err(|e| e.to_string())? = None;
     send_cmd(&window, UiCmd::Disconnect)
 }
@@ -624,4 +642,73 @@ fn set_window_title(window: WebviewWindow, title: String) -> Result<(), String> 
 #[tauri::command]
 fn app_version(app: AppHandle) -> String {
     app.package_info().version.to_string()
+}
+
+
+// ---------------- FlashFXP 目录书签 / 高亮 ----------------
+fn bookmark_scope(window: &WebviewWindow, site_id: Option<i64>) -> Result<String, String> {
+    if let Some(id) = site_id {
+        let repo = SiteRepo::open().map_err(|e| e.to_string())?;
+        if id <= 0 || !repo.list_sites().map_err(|e| e.to_string())?.iter().any(|site| site.id == id) {
+            return Err(flashfxp_lib::localized!("站点不存在", "Site not found"));
+        }
+        return Ok(format!("site:{id}"));
+    }
+    let session = session(window)?;
+    let site = session.current_site.lock().map_err(|e| e.to_string())?;
+    Ok(instance::bookmark_scope_for(site.as_ref().map(|(site, _)| site), session.connected.load(std::sync::atomic::Ordering::Acquire)))
+}
+
+#[tauri::command]
+fn bookmarks_list(window: WebviewWindow, site_id: Option<i64>) -> Result<Vec<flashfxp_lib::store::Bookmark>, String> {
+    SiteRepo::open().map_err(|e| e.to_string())?.bookmarks_list(&bookmark_scope(&window, site_id)?)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn bookmark_save(window: WebviewWindow, bookmark: flashfxp_lib::store::Bookmark, site_id: Option<i64>) -> Result<i64, String> {
+    let scope = bookmark_scope(&window, site_id)?;
+    if scope == "local" && !bookmark.remote_path.trim().is_empty() {
+        return Err(flashfxp_lib::localized!("请连接站点后保存远程书签", "Connect to a site before saving a remote bookmark"));
+    }
+    let id = SiteRepo::open().map_err(|e| e.to_string())?.bookmark_save(&scope, &bookmark).map_err(|e| e.to_string())?;
+    window.app_handle().emit("browsing-changed", "bookmarks").map_err(|e| e.to_string())?;
+    Ok(id)
+}
+
+#[tauri::command]
+fn bookmark_delete(window: WebviewWindow, id: i64, site_id: Option<i64>) -> Result<(), String> {
+    SiteRepo::open().map_err(|e| e.to_string())?.bookmark_delete(&bookmark_scope(&window, site_id)?, id).map_err(|e| e.to_string())?;
+    window.app_handle().emit("browsing-changed", "bookmarks").map_err(|e| e.to_string())
+}
+
+/// 只允许使用当前连接配置的书签，菜单打开后换站点也不会误导航。
+#[tauri::command]
+fn bookmark_open(window: WebviewWindow, id: i64) -> Result<String, String> {
+    let scope = bookmark_scope(&window, None)?;
+    let bookmark = SiteRepo::open().map_err(|e| e.to_string())?.bookmarks_list(&scope).map_err(|e| e.to_string())?
+        .into_iter().find(|bookmark| bookmark.id == id)
+        .ok_or_else(|| flashfxp_lib::localized!("当前站点没有此书签", "Bookmark does not belong to the current site"))?;
+    if !bookmark.local_path.is_empty() && !std::path::Path::new(&bookmark.local_path).is_dir() {
+        return Err(flashfxp_lib::localized!("本地书签目录不存在: {}", "Local bookmark directory does not exist: {}", bookmark.local_path));
+    }
+    if !bookmark.remote_path.is_empty() { current_site(&window)?; }
+    if !bookmark.local_path.is_empty() {
+        send_cmd(&window, UiCmd::LocalList { path: bookmark.local_path.into() })?;
+    }
+    if !bookmark.remote_path.is_empty() {
+        send_cmd(&window, UiCmd::RemoteList { path: bookmark.remote_path })?;
+    }
+    Ok(bookmark.sync_browsing)
+}
+
+#[tauri::command]
+fn highlight_rules() -> Result<Vec<flashfxp_lib::store::HighlightRule>, String> {
+    SiteRepo::open().map_err(|e| e.to_string())?.highlight_rules().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn highlight_rules_save(app: AppHandle, rules: Vec<flashfxp_lib::store::HighlightRule>, expected: Vec<flashfxp_lib::store::HighlightRule>) -> Result<(), String> {
+    SiteRepo::open().map_err(|e| e.to_string())?.highlight_rules_save_checked(&rules, &expected).map_err(|e| e.to_string())?;
+    app.emit("browsing-changed", "highlights").map_err(|e| e.to_string())
 }

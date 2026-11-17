@@ -1,5 +1,6 @@
 import { t, getLocale, formatNumber } from '../i18n.js'
 import React, { useState } from 'react'
+import { highlightColor } from '../highlights.js'
 import { Ico } from '../winicons.jsx'
 import { humanSize, fmtTime } from '../api.js'
 
@@ -8,7 +9,7 @@ const MARK_TXT = { same: '·', only: '＋', diff: '▲' }
 export default function FilePane({
   pane, title, entries, selected, marks, address, connected, diskFree, host, sort,
   onNavigate, onRefresh, onSelect, onActivate, onAction, onAddressGo, onHome,
-  onContextMenu, onDropTransfer,
+  onContextMenu, onDropTransfer, highlightRules = [],
 }) {
   const [dragOver, setDragOver] = useState(false)
   const files = entries.filter(e => !e.isDir).length
@@ -127,7 +128,7 @@ export default function FilePane({
                     <span className="fx-cell-icon">
                       <Ico name={e.isDir ? 'folder' : 'file'} size={16} />
                     </span>
-                    <span className="fx-cell-name">{e.name}</span>
+                    <span className="fx-cell-name" style={{ color: selected === i ? undefined : highlightColor(e.name, highlightRules) }}>{e.name}</span>
                     {marks && marks[e.name] && <span className="fx-mark">{MARK_TXT[marks[e.name]]}</span>}
                   </div>
                 </td>

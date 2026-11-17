@@ -1086,5 +1086,161 @@
   "language": {
     "zh": "语言",
     "en": "Language"
+  },
+  "bookmarks": {
+    "zh": "目录书签",
+    "en": "Folder Bookmarks"
+  },
+  "bookmark_new": {
+    "zh": "添加…",
+    "en": "Add…"
+  },
+  "bookmark_edit": {
+    "zh": "编辑…",
+    "en": "Edit…"
+  },
+  "bookmark_delete": {
+    "zh": "删除…",
+    "en": "Delete…"
+  },
+  "bookmark_confirm_delete": {
+    "zh": "删除书签",
+    "en": "Delete bookmark"
+  },
+  "bookmark_delete_question": {
+    "zh": "确定删除书签？",
+    "en": "Delete this bookmark?"
+  },
+  "bookmark_caption": {
+    "zh": "名称",
+    "en": "Caption"
+  },
+  "bookmark_remote_path": {
+    "zh": "远程路径",
+    "en": "Remote Path"
+  },
+  "bookmark_local_path": {
+    "zh": "本地路径",
+    "en": "Local Path"
+  },
+  "bookmark_sync": {
+    "zh": "同步浏览",
+    "en": "Synchronized Browsing"
+  },
+  "bookmark_sync_default": {
+    "zh": "默认（保持当前设置）",
+    "en": "Default (keep current setting)"
+  },
+  "bookmark_sync_enabled": {
+    "zh": "启用",
+    "en": "Enabled"
+  },
+  "bookmark_sync_disabled": {
+    "zh": "禁用",
+    "en": "Disabled"
+  },
+  "bookmark_caption_required": {
+    "zh": "请输入书签名称",
+    "en": "Enter a bookmark caption"
+  },
+  "bookmark_path_required": {
+    "zh": "请至少输入一个本地或远程路径",
+    "en": "Enter a local or remote path"
+  },
+  "bookmark_empty": {
+    "zh": "尚无书签",
+    "en": "No bookmarks yet"
+  },
+  "bookmark_scope_hint": {
+    "zh": "书签仅用于切换目录，不会连接其他站点或传输文件。",
+    "en": "Bookmarks change folders without connecting to another site or transferring files."
+  },
+  "bookmark_save_site_first": {
+    "zh": "请先应用以保存站点，再添加此站点的书签。",
+    "en": "Apply to save this site before adding its bookmarks."
+  },
+  "bookmark_add_current": {
+    "zh": "添加当前目录书签…",
+    "en": "Bookmark current folders…"
+  },
+  "bookmark_manage": {
+    "zh": "编辑书签…",
+    "en": "Edit Bookmarks…"
+  },
+  "save": {
+    "zh": "保存",
+    "en": "Save"
+  },
+  "filters": {
+    "zh": "筛选器",
+    "en": "Filters"
+  },
+  "highlights": {
+    "zh": "高亮",
+    "en": "Highlights"
+  },
+  "highlight_mask": {
+    "zh": "匹配掩码",
+    "en": "Mask"
+  },
+  "highlight_color": {
+    "zh": "颜色",
+    "en": "Color"
+  },
+  "highlight_order": {
+    "zh": "顺序",
+    "en": "Order"
+  },
+  "highlight_priority": {
+    "zh": "按从上到下顺序匹配，首条匹配规则决定文件名颜色。",
+    "en": "Rules match from top to bottom; the first matching rule sets the filename color."
+  },
+  "highlight_move_up": {
+    "zh": "上移规则",
+    "en": "Move rule up"
+  },
+  "highlight_move_down": {
+    "zh": "下移规则",
+    "en": "Move rule down"
+  },
+  "highlight_delete": {
+    "zh": "删除规则",
+    "en": "Delete rule"
+  },
+  "highlight_add": {
+    "zh": "添加规则",
+    "en": "Add rule"
+  },
+  "highlight_empty": {
+    "zh": "暂无高亮规则。添加掩码与颜色后点击应用。",
+    "en": "No highlight rules. Add a mask and color, then apply."
+  },
+  "highlight_mask_required": {
+    "zh": "请输入匹配掩码。",
+    "en": "Enter a mask."
+  },
+  "highlight_mask_invalid": {
+    "zh": "无效掩码：检查字符集、范围与反斜杠转义。",
+    "en": "Invalid mask: check sets, ranges, and backslash escapes."
+  },
+  "highlight_mask_too_long": {
+    "zh": "掩码最多允许 512 个字符。",
+    "en": "Masks support up to 512 characters."
+  },
+  "highlight_syntax": {
+    "zh": "匹配完整文件名（含文件夹），不区分大小写。* 匹配任意数量字符，? 匹配单个字符，[a-z] 为范围，[^abc] 排除字符。\\ 用于转义 \\ - [ ] ? *。掩码上限 512 字符。",
+    "en": "Matches entire file and folder names, ignoring case. * matches any number of characters; ? matches one; [a-z] is a range; [^abc] excludes characters. Use \\ to escape \\ - [ ] ? *. Maximum 512 characters per mask."
+  },
+  "apply": {
+    "zh": "应用",
+    "en": "Apply"
+  },
+  "bookmark_connect_first": {
+    "zh": "请先连接此书签的站点",
+    "en": "Connect to this bookmark’s site first"
+  },
+  "highlight_external_conflict": {
+    "zh": "高亮规则已在其他窗口修改。当前编辑内容已保留；请取消并重新打开此窗口后再编辑。",
+    "en": "Highlight rules changed in another window. Your draft is preserved; cancel and reopen this dialog before editing again."
   }
 }
