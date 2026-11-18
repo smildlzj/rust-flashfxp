@@ -39,6 +39,8 @@ export const api = {
   saveHighlights: (rules, expected) => invoke('highlight_rules_save', { rules, expected }),
   onBrowsingChanged: handler => listen('browsing-changed', event => handler(event.payload)),
   appVersion: () => invoke('app_version'),
+  checkUpdate: () => invoke('check_update'),
+  installUpdate: version => invoke('install_update', { version }),
   setLanguage: language => invoke('set_language', { language }),
   newSession: () => invoke('new_session'),
   setWindowTitle: title => invoke('set_window_title', { title }),

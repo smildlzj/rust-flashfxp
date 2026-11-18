@@ -16,3 +16,7 @@ flashfxp-lib = { path = "..", package = "rust-flashfxp" }
 chrono = "0.4"
 fs2 = "0.4"
 rfd = "0.15"
+reqwest = { version = "0.13", default-features = false, features = ["native-tls", "system-proxy"] }
+semver = "1"
+sha2 = "0.10"
+tempfile = "3"

@@ -154,6 +154,30 @@ export default function App() {
   const [optionsOpen, setOptionsOpen] = useState(false)
   const [relayOpen, setRelayOpen] = useState(false)
   const [aboutOpen, setAboutOpen] = useState(false)
+  const [update, setUpdate] = useState(null)
+
+  async function checkUpdate() {
+    setUpdate({ checking: true })
+    try {
+      setUpdate(await api.checkUpdate())
+    } catch (error) {
+      setUpdate({ error: errorMessage(error) })
+    }
+  }
+
+  async function installUpdate() {
+    const available = update
+    setUpdate({ ...available, downloading: true, error: null })
+    try {
+      await api.installUpdate(available.latestVersion)
+      setUpdate({ ...available, opened: true, error: null })
+    } catch (error) {
+      setUpdate({ ...available, error: errorMessage(error) })
+    }
+  }
+
+  const updateBusy = update?.checking || update?.downloading
+  const closeUpdate = () => { if (!updateBusy) setUpdate(null) }
   const [connectMenuOpen, setConnectMenuOpen] = useState(false)
   const [connectSites, setConnectSites] = useState([])
 
@@ -624,11 +648,11 @@ export default function App() {
     const onKey = (e) => {
       const t = e.target
       const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
-      const dialogOpen = siteManagerOpen || proxyManagerOpen || relayOpen || optionsOpen || aboutOpen || bookmarkOpen || filtersOpen || !!prompt
+      const dialogOpen = siteManagerOpen || proxyManagerOpen || relayOpen || optionsOpen || aboutOpen || !!update || bookmarkOpen || filtersOpen || !!prompt
       if (e.key === 'Escape') {
         if (dialogOpen) {
           setSiteManagerOpen(false); setProxyManagerOpen(false); setRelayOpen(false)
-          setAboutOpen(false); setBookmarkOpen(false); setFiltersOpen(false); setPrompt(null)
+          setAboutOpen(false); closeUpdate(); setBookmarkOpen(false); setFiltersOpen(false); setPrompt(null)
         }
         return
       }
@@ -767,7 +791,7 @@ export default function App() {
         }
         case 'reset':
           setSiteManagerOpen(false); setProxyManagerOpen(false); setRelayOpen(false)
-          setAboutOpen(false); setBookmarkOpen(false); setFiltersOpen(false); setPrompt(null)
+          setAboutOpen(false); closeUpdate(); setBookmarkOpen(false); setFiltersOpen(false); setPrompt(null)
           setShowTree(true); setShowBottom(true); setBottomTab('both')
           setShowQuick(true); setSyncBrowse(false)
           api.homeDir().then(p => { if (p) api.localList(p) }).catch(() => {})
@@ -959,6 +983,7 @@ export default function App() {
       { label: t("header_status_bar"), checked: showHeader, act: () => setShowHeader(v => !v) },
     ]},
     { name: t("help_h"), items: [
+      { label: t("check_for_updates"), act: checkUpdate },
       { label: t("about_rust_flash_ftp"), act: () => setAboutOpen(true) },
     ]},
   ]
@@ -1207,6 +1232,26 @@ export default function App() {
         setters={{ setShowQuick, setShowTree, setShowBottom, setShowHeader }} />
       <RelayDialog open={relayOpen} onOpenChange={setRelayOpen}
         currentSite={currentSite} remoteDir={remoteDir} onStart={startRelay} />
+
+      <WinDialog open={!!update} title={t("check_for_updates")} width={430} onClose={closeUpdate}
+        footer={<>
+          {update?.installerAvailable && !update.opened && (
+            <WinButton disabled={updateBusy} onClick={installUpdate}>{t("download_and_install_update")}</WinButton>
+          )}
+          <WinButton variant="outline" disabled={updateBusy} onClick={closeUpdate}>{t("ok")}</WinButton>
+        </>}>
+        <div className="space-y-2 text-sm" role="status">
+          {update?.checking && <p>{t("checking_github_for_updates")}</p>}
+          {update?.currentVersion && <p>{t("update_current_version", [update.currentVersion])}</p>}
+          {update?.currentVersion && !update.releasePublished && <p>{t("update_no_release")}</p>}
+          {update?.releasePublished && !update.latestVersion && <p>{t("update_already_current")}</p>}
+          {update?.latestVersion && <p>{t("update_latest_version", [update.latestVersion])}</p>}
+          {update?.latestVersion && !update.installerAvailable && <p>{t("update_installer_unavailable")}</p>}
+          {update?.downloading && <p>{t("update_downloading")}</p>}
+          {update?.opened && <p>{t("update_installer_opened")}</p>}
+          {update?.error && <p className="break-words text-destructive">{t(update.latestVersion ? "update_install_failed" : "update_check_failed", [update.error])}</p>}
+        </div>
+      </WinDialog>
 
       <WinDialog open={aboutOpen} title={t("about_rust_flash_ftp_2")} width={380} onClose={() => setAboutOpen(false)}
         footer={<WinButton onClick={() => setAboutOpen(false)}>{t("ok")}</WinButton>}>

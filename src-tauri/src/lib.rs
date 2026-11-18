@@ -4,6 +4,7 @@ use std::sync::Mutex;
 mod instance;
 mod session_state;
 mod windowing;
+mod updates;
 use std::sync::Arc;
 use session_state::Session;
 use tauri::{Manager, WebviewWindow};
@@ -214,6 +215,8 @@ pub fn run() {
             set_language,
             set_window_title,
             app_version,
+            updates::check_update,
+            updates::install_update,
             bookmarks_list,
             bookmark_save,
             bookmark_delete,
