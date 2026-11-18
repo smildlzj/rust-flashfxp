@@ -1,5 +1,6 @@
 use async_std::io::{ReadExt, WriteExt};
 use base64::Engine as _;
+use std::io::{self, ErrorKind};
 
 use crate::store::Proxy;
 
@@ -19,6 +20,21 @@ pub async fn dial_via_proxy(
     }
 }
 
+fn socks5_reply_error(error: io::Error, stage: &str) -> String {
+    match error.kind() {
+        ErrorKind::UnexpectedEof | ErrorKind::ConnectionReset | ErrorKind::ConnectionAborted => {
+            crate::localized!(
+                "SOCKS5 代理提前关闭了连接（{stage}）",
+                "The SOCKS5 proxy closed the connection before completing {stage}"
+            )
+        }
+        _ => crate::localized!(
+            "读取 SOCKS5 代理响应失败（{stage}）：{error}",
+            "Failed to read the SOCKS5 proxy response during {stage}: {error}"
+        ),
+    }
+}
+
 async fn socks5_handshake(
     mut stream: async_std::net::TcpStream,
     proxy: &Proxy,
@@ -34,7 +50,7 @@ async fn socks5_handshake(
     stream
         .read_exact(&mut b)
         .await
-        .map_err(|e| crate::localized!("代理握手失败: {e}", "Proxy handshake failed: {e}"))?;
+        .map_err(|e| socks5_reply_error(e, &crate::localized!("协商认证方式", "authentication method negotiation")))?;
     if b[0] != 0x05 {
         return Err(crate::localized!("代理协议版本不符", "Proxy protocol version mismatch"));
     }
@@ -55,7 +71,7 @@ async fn socks5_handshake(
             stream
                 .read_exact(&mut r)
                 .await
-                .map_err(|e| crate::localized!("代理认证失败: {e}", "Proxy authentication failed: {e}"))?;
+                .map_err(|e| socks5_reply_error(e, &crate::localized!("代理认证", "proxy authentication")))?;
             if r[1] != 0x00 {
                 return Err(crate::localized!("代理认证被拒绝", "Proxy authentication rejected"));
             }
@@ -74,11 +90,12 @@ async fn socks5_handshake(
         .write_all(&req)
         .await
         .map_err(|e| crate::localized!("发送代理请求失败: {e}", "Failed to send proxy request: {e}"))?;
+    let connect_reply = crate::localized!("等待目标连接结果", "the destination connection reply");
     let mut head = [0u8; 4];
     stream
         .read_exact(&mut head)
         .await
-        .map_err(|e| crate::localized!("代理响应失败: {e}", "Proxy response failed: {e}"))?;
+        .map_err(|e| socks5_reply_error(e, &connect_reply))?;
     if head[1] != 0x00 {
         return Err(crate::localized!("代理连接被拒绝: 状态码 {}", "Proxy connection rejected: status code {}", head[1]));
     }
@@ -89,7 +106,7 @@ async fn socks5_handshake(
             stream
                 .read_exact(&mut l)
                 .await
-                .map_err(|e| crate::localized!("代理响应失败: {e}", "Proxy response failed: {e}"))?;
+                .map_err(|e| socks5_reply_error(e, &connect_reply))?;
             l[0] as usize + 2
         }
         0x04 => 18,
@@ -99,7 +116,7 @@ async fn socks5_handshake(
     stream
         .read_exact(&mut sink)
         .await
-        .map_err(|e| crate::localized!("代理响应失败: {e}", "Proxy response failed: {e}"))?;
+        .map_err(|e| socks5_reply_error(e, &connect_reply))?;
     Ok(stream)
 }
 
@@ -148,4 +165,52 @@ async fn http_connect(
         return Err(crate::localized!("代理 CONNECT 失败: {first}", "Proxy CONNECT failed: {first}"));
     }
     Ok(stream)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn socks5_reports_disconnect_before_connect_reply_is_complete() {
+        let listener = async_std::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = async_std::task::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut greeting = [0; 3];
+            stream.read_exact(&mut greeting).await.unwrap();
+            assert_eq!(greeting, [5, 1, 0]);
+            stream.write_all(&[5, 0]).await.unwrap();
+            let mut request = [0; 7 + "example.test".len()];
+            stream.read_exact(&mut request).await.unwrap();
+            stream.write_all(&[5, 0]).await.unwrap();
+        });
+        let proxy = Proxy {
+            id: 0,
+            name: "Test SOCKS5".into(),
+            kind: "socks5".into(),
+            host: address.ip().to_string(),
+            port: address.port(),
+            username: None,
+            password: None,
+        };
+
+        let error = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            dial_via_proxy(&proxy, "example.test", 21),
+        )
+        .await
+        .unwrap()
+        .unwrap_err();
+        server.await;
+        assert_eq!(
+            error,
+            crate::localized!(
+                "SOCKS5 代理提前关闭了连接（等待目标连接结果）",
+                "The SOCKS5 proxy closed the connection before completing the destination connection reply"
+            )
+        );
+    }
 }

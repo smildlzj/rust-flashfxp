@@ -516,6 +516,7 @@ input, textarea, [data-user-select="text"], .fx-select-text { -webkit-user-selec
 }
 .fx-queue > table { background: var(--background); }
 .fx-log { flex: 1; min-width: 0; overflow: auto; padding: 6px 10px; font: 12px/16px ui-monospace, "SF Mono", Menlo, Consolas, monospace; background: var(--background); }
+.fx-log, .fx-log * { -webkit-user-select: text; user-select: text; }
 .fx-log-line { white-space: pre-wrap; word-break: break-all; }
 .fx-log-ts { color: #16a34a; }
 .fx-log-cmd { color: var(--ring); }

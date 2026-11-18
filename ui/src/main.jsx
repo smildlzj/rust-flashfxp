@@ -6,7 +6,7 @@ import './index.css'
 
 // 桌面程序：屏蔽 WebView 默认右键菜单（后续替换为自定义上下文菜单）
 window.addEventListener('contextmenu', (e) => {
-  if (e.target.closest('input, textarea')) return
+  if (e.target.closest('input, textarea, .fx-log')) return
   e.preventDefault()
 })
 
