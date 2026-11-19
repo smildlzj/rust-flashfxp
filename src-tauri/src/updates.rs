@@ -1,6 +1,6 @@
 use reqwest::{Client, Response};
 use semver::Version;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::{error::Error, path::Path, time::Duration};
 use tauri::AppHandle;
@@ -8,20 +8,16 @@ use tokio::{io::AsyncWriteExt, sync::Mutex};
 
 const REPOSITORY: &str = "smildlzj/rust-flashfxp";
 const CHECKSUMS: &str = "SHA256SUMS.txt";
+const INSTALLER_PREFIX: &str = "Rust-Flash-Ftp-v";
+const INSTALLER_SUFFIXES: [&str; 3] = ["-darwin-arm64.dmg", "-darwin-x64.dmg", "-windows-x64.exe"];
 const MAX_INSTALLER_BYTES: u64 = 512 * 1024 * 1024;
 static INSTALL: Mutex<()> = Mutex::const_new(());
 
 type UpdateResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
-#[derive(Deserialize)]
 struct Release {
-    tag_name: String,
-    assets: Vec<Asset>,
-}
-
-#[derive(Deserialize)]
-struct Asset {
-    name: String,
+    version: Version,
+    manifest: String,
 }
 
 #[derive(Serialize)]
@@ -54,25 +50,72 @@ async fn read_limited(mut response: Response, limit: usize) -> UpdateResult<Vec<
 }
 
 async fn latest_release(client: &Client) -> UpdateResult<Option<Release>> {
+    let root = format!("https://github.com/{REPOSITORY}/releases");
     let response = client
-        .get(format!(
-            "https://api.github.com/repos/{REPOSITORY}/releases/latest"
-        ))
-        .header("Accept", "application/vnd.github+json")
+        .get(format!("{root}/latest/download/{CHECKSUMS}"))
         .send()
         .await?;
     if response.status() == reqwest::StatusCode::NOT_FOUND {
+        // Distinguish an unpublished repository from a release missing its manifest.
+        let page = client.get(format!("{root}/latest")).send().await?;
+        if page.status() != reqwest::StatusCode::NOT_FOUND {
+            let page = page.error_for_status()?;
+            let tag_prefix = format!("/{REPOSITORY}/releases/tag/");
+            if page.url().host_str() == Some("github.com")
+                && page.url().path().starts_with(&tag_prefix)
+            {
+                return Err(flashfxp_lib::localized!(
+                    "最新版本缺少 SHA256SUMS.txt",
+                    "The latest release is missing SHA256SUMS.txt"
+                )
+                .into());
+            }
+        }
         return Ok(None);
     }
-    let body = read_limited(response.error_for_status()?, 2 * 1024 * 1024).await?;
-    Ok(Some(serde_json::from_slice(&body)?))
+    let body = read_limited(response.error_for_status()?, 64 * 1024).await?;
+    Ok(Some(Release::from_manifest(String::from_utf8(body)?)?))
 }
 
 impl Release {
-    fn version(&self) -> UpdateResult<Version> {
-        Ok(Version::parse(
-            self.tag_name.strip_prefix('v').unwrap_or(&self.tag_name),
-        )?)
+    fn from_manifest(manifest: String) -> UpdateResult<Self> {
+        let mut version = None;
+        let mut installers = std::collections::HashSet::new();
+        for line in manifest.lines() {
+            let Some((digest, name)) = line.split_once("  ") else {
+                continue;
+            };
+            let Some(name_body) = name.strip_prefix(INSTALLER_PREFIX) else {
+                continue;
+            };
+            let Some(version_text) = INSTALLER_SUFFIXES
+                .iter()
+                .find_map(|suffix| name_body.strip_suffix(suffix))
+            else {
+                continue;
+            };
+            let candidate = Version::parse(version_text)?;
+            if !valid_digest(digest)
+                || candidate.to_string() != version_text
+                || version
+                    .as_ref()
+                    .is_some_and(|expected| expected != &candidate)
+                || !installers.insert(name)
+            {
+                return Err(flashfxp_lib::localized!(
+                    "发布校验清单包含无效、重复或不同版本的安装包",
+                    "The release checksum manifest contains invalid, duplicate, or mixed-version installers"
+                ).into());
+            }
+            version = Some(candidate);
+        }
+        let version = version.ok_or_else(|| {
+            flashfxp_lib::localized!(
+                "发布校验清单中没有可识别的安装包",
+                "No recognized installer in the release checksum manifest"
+            )
+        })?;
+        Ok(Self { version, manifest })
     }
 
     fn installer_name(&self) -> Option<String> {
@@ -86,16 +129,15 @@ impl Release {
             ("windows", "x86_64") => ("windows-x64", "exe"),
             _ => return None,
         };
-        let name = format!("Rust-Flash-Ftp-{}-{platform}.{extension}", self.tag_name);
-        let has_asset = |name: &str| self.assets.iter().any(|asset| asset.name == name);
-        (has_asset(&name) && has_asset(CHECKSUMS)).then_some(name)
+        let name = format!("{INSTALLER_PREFIX}{}-{platform}.{extension}", self.version);
+        checksum_for(&self.manifest, &name).map(|_| name)
     }
 
     async fn download(&self, client: &Client, asset: &str) -> UpdateResult<Response> {
         Ok(client
             .get(format!(
-                "https://github.com/{REPOSITORY}/releases/download/{}/{asset}",
-                self.tag_name
+                "https://github.com/{REPOSITORY}/releases/download/v{}/{asset}",
+                self.version
             ))
             .send()
             .await?
@@ -112,7 +154,7 @@ async fn check(app: &AppHandle) -> UpdateResult<UpdateCheck> {
         release_published: false,
     };
     if let Some(release) = latest_release(&client(Duration::from_secs(15))?).await? {
-        let version = release.version()?;
+        let version = &release.version;
         result.release_published = true;
         if version.cmp_precedence(&app.package_info().version).is_gt() {
             result.latest_version = Some(version.to_string());
@@ -127,11 +169,14 @@ pub(crate) async fn check_update(app: AppHandle) -> Result<UpdateCheck, String> 
     check(&app).await.map_err(|error| error.to_string())
 }
 
+fn valid_digest(digest: &str) -> bool {
+    digest.len() == 64 && digest.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
 fn checksum_for<'a>(manifest: &'a str, name: &str) -> Option<&'a str> {
     manifest.lines().find_map(|line| {
         let (digest, filename) = line.split_once("  ")?;
-        (filename == name && digest.len() == 64 && digest.bytes().all(|b| b.is_ascii_hexdigit()))
-            .then_some(digest)
+        (filename == name && valid_digest(digest)).then_some(digest)
     })
 }
 
@@ -190,7 +235,7 @@ async fn install(app: &AppHandle, expected_version: &str) -> UpdateResult<()> {
     let release = latest_release(&client)
         .await?
         .ok_or("No published release")?;
-    let version = release.version()?;
+    let version = &release.version;
     if version.to_string() != expected_version
         || !version.cmp_precedence(&app.package_info().version).is_gt()
     {
@@ -199,9 +244,7 @@ async fn install(app: &AppHandle, expected_version: &str) -> UpdateResult<()> {
     let name = release
         .installer_name()
         .ok_or("No installer for this platform")?;
-    let manifest = read_limited(release.download(&client, CHECKSUMS).await?, 64 * 1024).await?;
-    let checksum =
-        checksum_for(std::str::from_utf8(&manifest)?, &name).ok_or("Installer checksum missing")?;
+    let checksum = checksum_for(&release.manifest, &name).ok_or("Installer checksum missing")?;
     let folder = tempfile::Builder::new()
         .prefix("rust-flash-ftp-update-")
         .tempdir()?;
@@ -229,14 +272,12 @@ mod tests {
         let arm = "Rust-Flash-Ftp-v0.1.10-darwin-arm64.dmg";
         let intel = "Rust-Flash-Ftp-v0.1.10-darwin-x64.dmg";
         let windows = "Rust-Flash-Ftp-v0.1.10-windows-x64.exe";
-        let mut release = Release {
-            tag_name: "v0.1.10".into(),
-            assets: [arm, intel, windows, CHECKSUMS]
-                .into_iter()
-                .map(|name| Asset { name: name.into() })
-                .collect(),
-        };
-        assert!(release.version().unwrap() > Version::new(0, 1, 2));
+        let digest = "a".repeat(64);
+        let release = Release::from_manifest(format!(
+            "{digest}  {arm}\n{digest}  {intel}\n{digest}  {windows}\n"
+        ))
+        .unwrap();
+        assert!(release.version > Version::new(0, 1, 2));
         assert_eq!(
             release.installer_for("macos", "aarch64").as_deref(),
             Some(arm)
@@ -250,8 +291,21 @@ mod tests {
             Some(windows)
         );
         assert_eq!(release.installer_for("linux", "x86_64"), None);
-        release.assets.pop();
-        assert_eq!(release.installer_for("windows", "x86_64"), None);
+        let mac_only = Release::from_manifest(format!("{digest}  {arm}\n")).unwrap();
+        assert_eq!(mac_only.installer_for("windows", "x86_64"), None);
+    }
+
+    #[test]
+    fn rejects_ambiguous_or_invalid_manifests() {
+        let digest = "f".repeat(64);
+        let asset = "Rust-Flash-Ftp-v0.1.3-darwin-arm64.dmg";
+        assert!(Release::from_manifest(format!("{digest}  {asset}\n{digest}  {asset}")).is_err());
+        assert!(Release::from_manifest(format!(
+            "{digest}  {asset}\n{digest}  Rust-Flash-Ftp-v0.1.4-windows-x64.exe"
+        ))
+        .is_err());
+        assert!(Release::from_manifest(format!("bad  {asset}")).is_err());
+        assert!(Release::from_manifest(format!("{digest}  other.txt")).is_err());
     }
 
     #[tokio::test]
