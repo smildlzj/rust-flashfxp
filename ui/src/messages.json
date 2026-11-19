@@ -1,4 +1,208 @@
 {
+  "ftp": {
+    "zh": "FTP",
+    "en": "FTP"
+  },
+  "sftp_over_ssh": {
+    "zh": "SFTP（通过 SSH）",
+    "en": "SFTP over SSH"
+  },
+  "quick_connect_title": {
+    "zh": "快速连接",
+    "en": "Quick Connect"
+  },
+  "quick_connect_history": {
+    "zh": "快速连接历史",
+    "en": "Quick Connect History"
+  },
+  "quick_connect_history_prompt": {
+    "zh": "选择历史连接",
+    "en": "Choose a recent connection"
+  },
+  "quick_connect_remove_history": {
+    "zh": "移除记录",
+    "en": "Remove Entry"
+  },
+  "quick_connect_add_site": {
+    "zh": "添加到站点管理器…",
+    "en": "Add to Site Manager…"
+  },
+  "quick_connect_invalid_address": {
+    "zh": "请输入有效的服务器地址或 FTP、FTPS、SFTP URL。",
+    "en": "Enter a valid server address or FTP, FTPS, or SFTP URL."
+  },
+  "show_active_edits_on_open": {
+    "zh": "编辑时显示活动编辑窗口",
+    "en": "Show Active Edits when opening a file for editing"
+  },
+  "remember_edit_history": {
+    "zh": "记住编辑历史",
+    "en": "Remember edit history"
+  },
+  "all_file_edits": {
+    "zh": "全部编辑",
+    "en": "All Edits"
+  },
+  "edit_file_path": {
+    "zh": "文件路径",
+    "en": "File Path"
+  },
+  "edit_file_site": {
+    "zh": "站点",
+    "en": "Site"
+  },
+  "edit_file_status": {
+    "zh": "状态",
+    "en": "Status"
+  },
+  "edit_history_inactive": {
+    "zh": "历史记录",
+    "en": "History"
+  },
+  "edit_status_active": {
+    "zh": "编辑中",
+    "en": "Editing"
+  },
+  "edit_status_modified": {
+    "zh": "已修改",
+    "en": "Modified"
+  },
+  "edit_status_error": {
+    "zh": "需要处理",
+    "en": "Needs attention"
+  },
+  "reopen_edit": {
+    "zh": "重新打开",
+    "en": "Reopen"
+  },
+  "redownload_edit": {
+    "zh": "重新下载",
+    "en": "Redownload"
+  },
+  "remove_edit_history": {
+    "zh": "移除记录",
+    "en": "Remove History Entry"
+  },
+  "confirm_redownload_edit": {
+    "zh": "重新下载会替换当前编辑副本。继续吗？",
+    "en": "Redownload and replace the current editing copy?"
+  },
+  "view_file": {
+    "zh": "查看文件",
+    "en": "View File"
+  },
+  "edit_file": {
+    "zh": "编辑文件",
+    "en": "Edit File"
+  },
+  "edit_upload_started": {
+    "zh": "正在上传编辑后的文件 [{0}] {1}",
+    "en": "Uploading edited file [{0}] {1}"
+  },
+  "edit_upload_saved": {
+    "zh": "编辑后的文件已上传 [{0}] {1}",
+    "en": "Uploaded edited file [{0}] {1}"
+  },
+  "edit_upload_failed": {
+    "zh": "编辑回传失败 [{0}] {1}：{2}",
+    "en": "Edited file upload failed [{0}] {1}: {2}"
+  },
+  "file_edit_uploaded": {
+    "zh": "已上传到原站点",
+    "en": "Uploaded to the original site"
+  },
+  "active_file_edits": {
+    "zh": "活动编辑",
+    "en": "Active Edits"
+  },
+  "opening_file": {
+    "zh": "正在打开文件…",
+    "en": "Opening file…"
+  },
+  "saving_open_file": {
+    "zh": "正在保存…",
+    "en": "Saving…"
+  },
+  "no_open_files": {
+    "zh": "没有打开的文件",
+    "en": "No open files"
+  },
+  "external_file_open": {
+    "zh": "文件已在关联应用中打开",
+    "en": "File opened in the associated app"
+  },
+  "close_open_file": {
+    "zh": "关闭文件",
+    "en": "Close File"
+  },
+  "upload_edited_file": {
+    "zh": "要将已保存的改动上传到原站点吗？",
+    "en": "Upload the saved changes to the original site?"
+  },
+  "discard_open_file_changes": {
+    "zh": "要关闭文件并放弃未保存或未上传的改动吗？",
+    "en": "Close this file and discard unsaved or unuploaded changes?"
+  },
+  "file_changes_pending_upload": {
+    "zh": "有改动待上传",
+    "en": "Changes pending upload"
+  },
+  "file_edit_preferences": {
+    "zh": "查看与编辑文件",
+    "en": "View and Edit Files"
+  },
+  "file_edit_remote_save": {
+    "zh": "远程文件保存后",
+    "en": "After saving a remote file"
+  },
+  "file_edit_manual_upload": {
+    "zh": "从活动编辑手动上传",
+    "en": "Upload manually from Active Edits"
+  },
+  "file_edit_prompt_upload": {
+    "zh": "询问是否上传",
+    "en": "Prompt before uploading"
+  },
+  "file_edit_auto_upload": {
+    "zh": "自动上传",
+    "en": "Upload automatically"
+  },
+  "file_edit_global_policy": {
+    "zh": "使用全局保存策略",
+    "en": "Use global save policy"
+  },
+  "file_edit_associations": {
+    "zh": "文件关联",
+    "en": "File Associations"
+  },
+  "file_edit_pattern": {
+    "zh": "文件名匹配规则",
+    "en": "File name pattern"
+  },
+  "file_edit_viewer_path": {
+    "zh": "选择查看器",
+    "en": "Choose a viewer"
+  },
+  "file_edit_editor_path": {
+    "zh": "选择编辑器",
+    "en": "Choose an editor"
+  },
+  "clear_program": {
+    "zh": "清除",
+    "en": "Clear"
+  },
+  "file_edit_add_association": {
+    "zh": "添加关联",
+    "en": "Add Association"
+  },
+  "file_edit_association_save_failed": {
+    "zh": "无法保存文件关联，请重试。",
+    "en": "Could not save file associations. Try again."
+  },
+  "file_edit_association_hint": {
+    "zh": "支持 * 和 ?，按列表顺序匹配。通过「浏览」选择应用，留空使用内置文本工具。",
+    "en": "Use * and ? in list order. Click Browse to choose an app. Leave it blank to use the built-in text tool."
+  },
   "check_for_updates": {
     "zh": "检查更新…",
     "en": "Check for Updates…"
@@ -134,6 +338,10 @@
   "delete_value": {
     "zh": "删除「{0}」？",
     "en": "Delete “{0}”?"
+  },
+  "delete_items_value": {
+    "zh": "删除选中的 {0} 项？",
+    "en": "Delete {0} selected items?"
   },
   "delete_failed_value": {
     "zh": "删除失败: {0}",
@@ -530,6 +738,18 @@
   "cancel_transfer": {
     "zh": "取消该任务",
     "en": "Cancel Transfer"
+  },
+  "clear_log": {
+    "zh": "清空日志",
+    "en": "Clear Log"
+  },
+  "copy_log_selection": {
+    "zh": "复制",
+    "en": "Copy"
+  },
+  "select_all_log": {
+    "zh": "全选",
+    "en": "Select All"
   },
   "copy_name": {
     "zh": "复制名称",

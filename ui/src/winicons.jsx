@@ -1,6 +1,6 @@
 import React from 'react'
 import {
-  AppWindow, Plug, PlugZap, Unplug, File as FileIcon, Folder, FolderOpen,
+  AppWindow, Zap, PlugZap, Unplug, File as FileIcon, Folder, FolderOpen,
   ArrowUp, Monitor, Network, Star, Pause, Play, House, Globe, CircleX,
   RefreshCw, GitCompareArrows, FolderInput, Trash2, RotateCcw, ListFilter,
 } from 'lucide-react'
@@ -22,7 +22,7 @@ const ICON_MAP = {
   greenUp: ArrowUp,
 
   // 连接
-  connect: Plug,
+  connect: Zap,
   connected: PlugZap,
   disconnect: Unplug,
 

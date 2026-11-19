@@ -18,6 +18,8 @@ pub struct Session {
     pub restored: Mutex<HashSet<u64>>,
     pub cancelled: Mutex<HashSet<u64>>,
     pub ids: Mutex<TaskIds>,
+    pub documents: Mutex<crate::file_edit::Documents>,
+    pub editor_requests: Mutex<Vec<serde_json::Value>>,
 }
 
 pub type Sessions = Mutex<HashMap<String, Arc<Session>>>;
@@ -177,6 +179,8 @@ mod tests {
                 restored: Mutex::new(HashSet::new()),
                 cancelled: Mutex::new(HashSet::new()),
                 ids: Mutex::new(TaskIds::default()),
+                documents: Mutex::new(Default::default()),
+                editor_requests: Mutex::new(Vec::new()),
             })
         };
         let main = make_session();

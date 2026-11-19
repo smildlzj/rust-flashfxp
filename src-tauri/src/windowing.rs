@@ -31,7 +31,7 @@ pub fn attach(window: &WebviewWindow) {
     let mut rect = crate::WinRect::default();
     let scale = win.scale_factor().unwrap_or(1.0);
     let pos: tauri::LogicalPosition<i32> = win.outer_position().unwrap_or_default().to_logical(scale);
-    let size: tauri::LogicalSize<u32> = win.outer_size().unwrap_or_default().to_logical(scale);
+    let size: tauri::LogicalSize<u32> = win.inner_size().unwrap_or_default().to_logical(scale);
     rect.x = pos.x; rect.y = pos.y; rect.w = size.width; rect.h = size.height;
     let label = window.label().to_string();
     let rect = Mutex::new(rect);
@@ -47,6 +47,12 @@ pub fn attach(window: &WebviewWindow) {
                 return;
             }
             _ => {}
+        }
+        if !matches!(event, tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_))
+            || win.is_maximized().unwrap_or(false)
+            || win.is_fullscreen().unwrap_or(false)
+        {
+            return;
         }
         if let Ok(mut rect) = rect.lock() {
             let scale = win.scale_factor().unwrap_or(1.0);

@@ -10,6 +10,8 @@ import SiteManager from './components/SiteManager.jsx'
 import ProxyManager from './components/ProxyManager.jsx'
 import RelayDialog from './components/RelayDialog.jsx'
 import OptionsDialog from './components/OptionsDialog.jsx'
+import QuickConnectDialog from './components/QuickConnectDialog.jsx'
+import { parseQuickConnect, quickAddress, quickHistoryKey, rememberQuickConnect } from './quick-connect.js'
 import { Ico, FxIconDefs, AppLogo } from './winicons.jsx'
 import {
   WinMenuBar, WinButton, WinInput, WinCheck, WinDialog,
@@ -74,7 +76,14 @@ export default function App() {
     get: (k, d) => {
       try { const v = localStorage.getItem('fx.ui.' + k); return v === null ? d : JSON.parse(v) } catch { return d }
     },
-    set: (k, v) => { try { localStorage.setItem('fx.ui.' + k, JSON.stringify(v)) } catch {} },
+    set: (k, v) => {
+      try {
+        localStorage.setItem('fx.ui.' + k, JSON.stringify(v))
+        return true
+      } catch {
+        return false
+      }
+    },
   }
 
   const [connected, setConnected] = useState(false)
@@ -83,12 +92,12 @@ export default function App() {
 
   const [localDir, setLocalDir] = useState('')
   const [localEntries, setLocalEntries] = useState([])
-  const [localSelectionName, setLocalSelectionName] = useState(null)
+  const [localSelection, setLocalSelection] = useState(null)
   const [diskFree, setDiskFree] = useState(0)
 
   const [remoteDir, setRemoteDir] = useState(null)
   const [remoteEntries, setRemoteEntries] = useState([])
-  const [remoteSelectionName, setRemoteSelectionName] = useState(null)
+  const [remoteSelection, setRemoteSelection] = useState(null)
   const [activePane, setActivePane] = useState('local') // 键盘操作作用于哪一栏
 
   const [localHistory, setLocalHistory] = useState([])
@@ -181,7 +190,11 @@ export default function App() {
   const [connectMenuOpen, setConnectMenuOpen] = useState(false)
   const [connectSites, setConnectSites] = useState([])
 
-  const [qc, setQc] = useState({ host: '', port: '21', user: '', pass: '' })
+  const [qc, setQc] = useState({ host: '', port: '21', user: '', pass: '', protocol: 'ftp' })
+  const [quickConnectDraft, setQuickConnectDraft] = useState(null)
+  const [quickHistory, setQuickHistory] = useState(() => uiPref.get('quickConnectHistory', []))
+  const [newSiteDraft, setNewSiteDraft] = useState(null)
+  const [deleteConfirmation, setDeleteConfirmation] = useState(null)
   const [prompt, setPrompt] = useState(null) // {title, value, apply}
   const [notice, setNotice] = useState('')
   const [elapsed, setElapsed] = useState(0)
@@ -203,8 +216,31 @@ export default function App() {
   const stateRef = useRef({})
   stateRef.current = { localDir, remoteDir, connected, currentSite }
   const actionsRef = useRef({})
+  const listSearch = useRef(null)
   const bootLogged = useRef(false) // StrictMode 下避免启动日志重复
   const ctxMenu = useWinContextMenu()
+  const openLogMenu = (event) => {
+    const logPanel = event.currentTarget
+    const selection = document.getSelection()
+    const text = selection && logPanel.contains(selection.anchorNode) && logPanel.contains(selection.focusNode)
+      ? selection.toString()
+      : ''
+    ctxMenu.openMenu(event, [
+      { label: t('copy_log_selection'), disabled: !text, act: async () => {
+        try { await navigator.clipboard.writeText(text) }
+        catch (error) { showNotice(errorMessage(error)) }
+      } },
+      { label: t('select_all_log'), act: () => {
+        if (!selection) return
+        const range = document.createRange()
+        range.selectNodeContents(logPanel)
+        selection.removeAllRanges()
+        selection.addRange(range)
+      } },
+      { sep: true },
+      { label: t('clear_log'), disabled: !log.length, act: () => setLog([]) },
+    ])
+  }
   const [appVersion, setAppVersion] = useState('…')
   const [highlightRules, setHighlightRules] = useState([])
   const [filtersOpen, setFiltersOpen] = useState(false)
@@ -287,10 +323,34 @@ export default function App() {
     const index = entries.findIndex(entry => entry.name === name)
     return index < 0 ? null : index
   }
-  const localSel = selectedIndex(sortedLocal, localSelectionName)
-  const remoteSel = selectedIndex(sortedRemote, remoteSelectionName)
-  const setLocalSel = index => setLocalSelectionName(index == null ? null : stateRef.current.sortedLocal[index]?.name ?? null)
-  const setRemoteSel = index => setRemoteSelectionName(index == null ? null : stateRef.current.sortedRemote[index]?.name ?? null)
+  const localNames = new Set(localSelection?.names)
+  const remoteNames = new Set(remoteSelection?.names)
+  const localSel = selectedIndex(sortedLocal, localSelection?.names.at(-1))
+  const remoteSel = selectedIndex(sortedRemote, remoteSelection?.names.at(-1))
+
+  const selectRow = (entries, setter, index, options = {}) => {
+    const name = entries[index]?.name
+    if (name == null) {
+      setter(null)
+      return
+    }
+    const available = new Set(entries.map(entry => entry.name))
+    setter(selection => {
+      const names = (selection?.names ?? []).filter(item => available.has(item))
+      if (options.context && names.includes(name)) return selection
+      const anchor = selectedIndex(entries, selection?.anchor)
+      if (options.shiftKey && anchor != null) {
+        const range = entries.slice(Math.min(anchor, index), Math.max(anchor, index) + 1).map(entry => entry.name)
+        return { anchor: selection.anchor, names: [...range.filter(item => item !== name), name] }
+      }
+      if (options.metaKey || options.ctrlKey) {
+        return { anchor: name, names: names.includes(name) ? names.filter(item => item !== name) : [...names, name] }
+      }
+      return { anchor: name, names: [name] }
+    })
+  }
+  const setLocalSel = (index, options) => selectRow(stateRef.current.sortedLocal, setLocalSelection, index, options)
+  const setRemoteSel = (index, options) => selectRow(stateRef.current.sortedRemote, setRemoteSelection, index, options)
 
   // ---- 事件处理 ----
   const handleEvent = (p) => {
@@ -387,8 +447,14 @@ export default function App() {
   }
 
   // ---- 导航 ----
-  const refreshLocal = () => { if (localDir) api.localList(localDir) }
-  const refreshRemote = () => { if (remoteDir) api.remoteList(remoteDir) }
+  const refreshLocal = async () => {
+    if (!localDir) return
+    try { await api.localList(localDir) } catch (error) { showNotice(errorMessage(error)) }
+  }
+  const refreshRemote = async () => {
+    if (!remoteDir) return
+    try { await api.remoteList(remoteDir) } catch (error) { showNotice(errorMessage(error)) }
+  }
   const navLocal = (path) => api.localList(path)
   // 连接已保存站点后，若配置了本地初始路径则切换本地面板（配置无效时保持现状）
   const applySiteLocalPath = (site) => {
@@ -441,13 +507,38 @@ export default function App() {
   // ---- 操作 ----
   const askPrompt = (title, value, apply) => setPrompt({ title, value, apply })
 
+  const editorPreferences = () => ({
+    associations: uiPref.get('fileAssociations', []),
+    policy: uiPref.get('remoteEditOnSave', 'prompt'),
+    remember: uiPref.get('rememberEditHistory', false),
+  })
+
   const paneAction = (which, action, target) => {
     const selIdx = which === 'local' ? localSel : remoteSel
     const entries = which === 'local' ? sortedLocal : sortedRemote
     const sel = target ?? (selIdx != null ? entries[selIdx] : null)
+    const names = which === 'local' ? localNames : remoteNames
+    const selected = target && !names.has(target.name)
+      ? [target]
+      : entries.filter(entry => names.has(entry.name))
     // 后端命令与列目录走同一条 UiCmd 队列：必须 await 操作命令入队后再刷新，
     // 否则刷新可能先于 mkdir/rename/delete 执行，列表看不到结果（真实时序缺陷）。
-    if (action === 'mkdir') {
+    if (action === 'view' || action === 'edit') {
+      const remote = which === 'remote'
+      const directory = remote ? remoteDir : localDir
+      if (!directory || (remote && !connected)) return
+      const files = selected.filter(entry => !entry.isDir)
+      if (!files.length) return
+      void api.showFileEditor({
+        action, remote,
+        ...editorPreferences(),
+        show: action === 'view' || uiPref.get('showActiveEditsOnOpen', true),
+        entries: files.map(entry => ({
+          name: entry.name,
+          path: remote ? remoteJoin(directory, entry.name) : `${directory}/${entry.name}`,
+        })),
+      }).catch(problem => showNotice(errorMessage(problem)))
+    } else if (action === 'mkdir') {
       askPrompt(which === 'local' ? t("new_local_folder") : t("new_remote_folder"), '', async (name) => {
         try {
           if (which === 'local') await api.mkdirLocal(`${localDir}/${name}`)
@@ -463,17 +554,21 @@ export default function App() {
         } catch (e) { showNotice(t("rename_failed_value", [e])); return }
         if (which === 'local') refreshLocal(); else refreshRemote()
       })
-    } else if (action === 'delete' && sel) {
-      if (uiPref.get('confirmDelete', true) && !window.confirm(t("delete_value", [sel.name]))) return
-      ;(async () => {
+    } else if (action === 'delete' && selected.length) {
+      const remove = async () => {
         try {
-          if (which === 'local') { await api.deleteLocal([`${localDir}/${sel.name}`]); setLocalSel(null) }
-          else { await api.deleteRemote([remoteJoin(remoteDir, sel.name)]); setRemoteSel(null) }
+          if (which === 'local') { await api.deleteLocal(selected.map(entry => `${localDir}/${entry.name}`)); setLocalSel(null) }
+          else { await api.deleteRemote(selected.map(entry => remoteJoin(remoteDir, entry.name))); setRemoteSel(null) }
         } catch (e) { showNotice(t("delete_failed_value", [e])); return }
         if (which === 'local') refreshLocal(); else refreshRemote()
-      })()
-    } else if (action === 'transfer' && sel) {
-      enqueue(which === 'local' ? 'upload' : 'download', sel.name, sel.isDir)
+      }
+      if (uiPref.get('confirmDelete', true)) {
+        setDeleteConfirmation({ selected, remove })
+      } else {
+        void remove()
+      }
+    } else if (action === 'transfer') {
+      for (const entry of selected) enqueue(which === 'local' ? 'upload' : 'download', entry.name, entry.isDir)
     } else if (action === 'compare') {
       comparePanes()
     } else if (action === 'clear-compare') {
@@ -553,15 +648,38 @@ export default function App() {
   }
 
   // ---- 连接 ----
-  const quickConnect = (fields) => {
-    const f = fields || qc
-    if (!f.host.trim()) { showNotice(t("enter_a_server_address")); return }
+  const quickFields = (fields) => {
+    try { return parseQuickConnect(fields) }
+    catch (problem) { throw new Error(t(problem.message)) }
+  }
+  const storeQuickHistory = (entries) => {
+    uiPref.set('quickConnectHistory', entries)
+    setQuickHistory(entries)
+  }
+  const quickConnect = async (fields = qc) => {
+    const connection = quickFields(fields)
     setQueue([])
-    setCurrentSite({ host: f.host.trim(), port: Number(f.port) || 21 })
-    api.quickConnect({
-      host: f.host.trim(), port: Number(f.port) || 21,
-      user: f.user.trim(), pass: f.pass,
+    await api.quickConnect(connection)
+    setCurrentSite({ host: connection.host, port: connection.port })
+    setQc({ ...connection, pass: '' })
+    storeQuickHistory(rememberQuickConnect(uiPref.get('quickConnectHistory', []), connection))
+  }
+  const runQuickConnect = (fields) => {
+    void quickConnect(fields ?? { ...qc, protocol: 'ftp', remotePath: null }).catch(problem => showNotice(errorMessage(problem)))
+  }
+  const openQuickConnect = (entry) => {
+    setConnectMenuOpen(false)
+    setQuickHistory(uiPref.get('quickConnectHistory', []))
+    setQuickConnectDraft(entry ? { ...entry, pass: '', historyKey: quickHistoryKey(entry) } : { ...qc })
+  }
+  const quickSiteDraft = (fields) => {
+    const { host, port, protocol, user, pass, remotePath } = quickFields(fields)
+    setNewSiteDraft({
+      name: quickAddress({ host, port }), host, port, protocol,
+      username: user, password: pass, remotePath: remotePath || '',
     })
+    setQuickConnectDraft(null)
+    setSiteManagerOpen(true)
   }
 
   // 工具栏右侧「连接」下拉：快速连接 / 站点管理器 / 已保存站点
@@ -569,6 +687,7 @@ export default function App() {
     const next = !connectMenuOpen
     setConnectMenuOpen(next)
     if (next) {
+      setQuickHistory(uiPref.get('quickConnectHistory', []))
       try { setConnectSites(await api.sites()) } catch { setConnectSites([]) }
     }
   }
@@ -623,13 +742,38 @@ export default function App() {
     return () => clearInterval(elapsedTimer)
   }, [])
 
+  useEffect(() => {
+    let disposed = false
+    let unlisten
+    api.onFileEditorSave(async ({ status, directory, remote, error }) => {
+      if (disposed) return
+      if (remote) {
+        const [site, path] = remote
+        if (status === 'started') addLog(t('edit_upload_started', [site, path]), 'command')
+        if (status === 'saved') addLog(t('edit_upload_saved', [site, path]), 'success')
+        if (status === 'failed') addLog(t('edit_upload_failed', [site, path, error]), 'error')
+      }
+      if (status !== 'saved') return
+      const current = stateRef.current
+      try {
+        if (!remote && directory === current.localDir) await api.localList(current.localDir)
+        if (remote && current.connected && directory === current.remoteDir) await api.remoteList(current.remoteDir)
+      } catch (problem) {
+        showNotice(errorMessage(problem))
+      }
+    }).then(stop => {
+      if (disposed) stop()
+      else unlisten = stop
+    }).catch(problem => showNotice(errorMessage(problem)))
+    return () => { disposed = true; unlisten?.() }
+  }, [])
+
   useEffect(() => { uiPref.set('startupTree', showTree) }, [showTree])
   useEffect(() => { uiPref.set('startupBottom', showBottom) }, [showBottom])
   useEffect(() => { uiPref.set('startupQuickbar', showQuick) }, [showQuick])
   useEffect(() => { uiPref.set('startupHeaderbar', showHeader) }, [showHeader])
   useEffect(() => { uiPref.set('bottomTab', bottomTab) }, [bottomTab])
   useEffect(() => { uiPref.set('syncBrowse', syncBrowse) }, [syncBrowse])
-  useEffect(() => { uiPref.set('qcHost', qc.host); uiPref.set('qcPort', qc.port); uiPref.set('qcUser', qc.user) }, [qc])
 
   useEffect(() => {
     const siteLabel = currentSite?.name || (currentSite?.host
@@ -640,7 +784,7 @@ export default function App() {
     api.setWindowTitle(title).catch(() => {})
   }, [connected, currentSite])
 
-  actionsRef.current = { quickConnect, enqueue, comparePanes, navLocal, paneAction, refreshLocal, refreshRemote, activateLocal, activateRemote, remoteUp, localUp }
+  actionsRef.current = { quickConnect: runQuickConnect, enqueue, comparePanes, navLocal, paneAction, refreshLocal, refreshRemote, activateLocal, activateRemote, remoteUp, localUp }
 
   // 菜单里标注的快捷键需要真实生效：F4/F5/F6/F7/F8、Delete、Backspace、Enter、Escape
   // 无依赖数组 → 每次渲染后重新注册，闭包内状态始终是最新值
@@ -648,11 +792,11 @@ export default function App() {
     const onKey = (e) => {
       const t = e.target
       const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
-      const dialogOpen = siteManagerOpen || proxyManagerOpen || relayOpen || optionsOpen || aboutOpen || !!update || bookmarkOpen || filtersOpen || !!prompt
+      const dialogOpen = siteManagerOpen || proxyManagerOpen || relayOpen || optionsOpen || aboutOpen || !!update || bookmarkOpen || filtersOpen || !!prompt || !!deleteConfirmation || !!quickConnectDraft
       if (e.key === 'Escape') {
         if (dialogOpen) {
           setSiteManagerOpen(false); setProxyManagerOpen(false); setRelayOpen(false)
-          setAboutOpen(false); closeUpdate(); setBookmarkOpen(false); setFiltersOpen(false); setPrompt(null)
+          setAboutOpen(false); closeUpdate(); setBookmarkOpen(false); setFiltersOpen(false); setPrompt(null); setDeleteConfirmation(null); setQuickConnectDraft(null); setNewSiteDraft(null)
         }
         return
       }
@@ -661,18 +805,39 @@ export default function App() {
         document.querySelector(`[data-bookmark-pane="${activePane}"]`)?.click()
         return
       }
-      if (typing || dialogOpen || e.metaKey || e.ctrlKey || e.altKey) return
+      if (dialogOpen) return
+      if (e.key === 'F5' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault()
+        actionsRef.current.refreshLocal()
+        actionsRef.current.refreshRemote()
+        return
+      }
+      if (e.key === 'F8' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault()
+        openQuickConnect()
+        return
+      }
+      if (typing) return
+      if (e.metaKey && !e.ctrlKey && !e.altKey && e.key === 'Backspace') {
+        e.preventDefault()
+        actionsRef.current.paneAction(activePane, 'delete')
+        return
+      }
+      if (!ctxMenu.menu && e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.target?.closest?.('[data-file-list]')) {
+        const key = e.key.toLowerCase()
+        if (key === 'v' || key === 'e') {
+          e.preventDefault()
+          actionsRef.current.paneAction(activePane, key === 'v' ? 'view' : 'edit')
+          return
+        }
+      }
+      if (e.metaKey || e.ctrlKey || e.altKey) return
       const a = actionsRef.current
       switch (e.key) {
         case 'F12': e.preventDefault(); api.newSession().catch(e => showNotice(errorMessage(e))); break
         case 'F4': e.preventDefault(); setSiteManagerOpen(true); break
-        case 'F5': e.preventDefault(); a.refreshLocal(); a.refreshRemote(); break
         case 'F6': e.preventDefault(); setOptionsOpen(true); break
         case 'F7': e.preventDefault(); a.paneAction('local', 'mkdir'); break
-        case 'F8':
-          e.preventDefault(); setShowQuick(true)
-          setTimeout(() => document.getElementById('qc-host')?.focus(), 0)
-          break
         case 'Delete': e.preventDefault(); a.paneAction(activePane, 'delete'); break
         case 'Backspace':
           e.preventDefault()
@@ -683,7 +848,37 @@ export default function App() {
           if (activePane === 'remote') a.activateRemote(remoteSel)
           else a.activateLocal(localSel)
           break
-        default: break
+        default: {
+          if (ctxMenu.menu || e.isComposing || !/^[\p{L}\p{N}]$/u.test(e.key)) break
+          const list = e.target?.closest?.('[data-file-list]')
+          if (!list) break
+          const pane = list.dataset.fileList
+          const remote = pane === 'remote'
+          const entries = remote ? sortedRemote : sortedLocal
+          const selection = remote ? remoteSelection : localSelection
+          const path = remote ? remoteDir : localDir
+          const current = listSearch.current
+          const now = Date.now()
+          const letter = e.key.toLocaleLowerCase(language)
+          const recent = current?.pane === pane && current.path === path && now - current.time < 800
+          const cycle = recent && current.prefix === letter
+          const prefix = recent && !cycle ? current.prefix + letter : letter
+          listSearch.current = { pane, path, time: now, prefix }
+
+          const matches = entry => entry.name.normalize('NFC').toLocaleLowerCase(language).startsWith(prefix)
+          const selected = selectedIndex(entries, selection?.names.at(-1))
+          let index = cycle && selected != null
+            ? entries.findIndex((entry, i) => i > selected && matches(entry))
+            : -1
+          if (index < 0) index = entries.findIndex(matches)
+          if (index < 0) break
+
+          e.preventDefault()
+          const select = remote ? setRemoteSel : setLocalSel
+          select(index)
+          list.querySelectorAll('[data-file-row]')[index]?.scrollIntoView({ block: 'nearest' })
+          break
+        }
       }
     }
     document.addEventListener('keydown', onKey)
@@ -799,7 +994,7 @@ export default function App() {
           break
         case 'quickfill': {
           const [host, port, user, pass] = cmd.slice(10).split(':')
-          setQc({ host, port, user, pass })
+          setQc({ host, port, user, pass, protocol: 'ftp' })
           setTimeout(() => a().quickConnect({ host, port: port || '21', user: user || '', pass: pass || '' }), 100)
           break
         }
@@ -936,7 +1131,7 @@ export default function App() {
   const menus = [
     { name: t("session_e"), items: [
       { label: t('new_session'), key: 'F12', act: () => api.newSession().catch(e => showNotice(errorMessage(e))) },
-      { label: t("quick_connect"), key: 'F8', act: () => document.getElementById('qc-host')?.focus() },
+      { label: t("quick_connect"), key: 'F8', act: () => openQuickConnect() },
       { label: t("connect_to_site"), key: 'F4', act: () => setSiteManagerOpen(true) },
       { sep: true },
       { label: t("disconnect_d"), act: () => api.disconnect(), disabled: !connected },
@@ -972,11 +1167,12 @@ export default function App() {
     { name: t("directory_d"), items: [
       { label: t("new_folder"), key: 'F7', act: () => paneAction('local', 'mkdir') },
       { label: t("rename_2"), act: () => paneAction('local', 'rename') },
-      { label: t("delete"), key: 'Del', act: () => paneAction('local', 'delete') },
+      { label: t("delete"), key: 'Del', act: () => paneAction(activePane, 'delete') },
       { sep: true },
       { label: t("refresh_f5"), key: 'F5', act: () => { refreshLocal(); refreshRemote() } },
     ]},
     { name: t("view_v"), items: [
+      { label: t("active_file_edits"), act: () => api.showFileEditor({ action: 'manage', ...editorPreferences(), entries: [] }).catch(problem => showNotice(errorMessage(problem))) },
       { label: t("directory_tree"), checked: showTree, act: () => setShowTree(v => !v) },
       { label: t("queue_and_log_windows"), checked: showBottom, act: () => setShowBottom(v => !v) },
       { label: t("quick_connect_bar"), checked: showQuick, act: () => setShowQuick(v => !v) },
@@ -1035,8 +1231,8 @@ export default function App() {
             <WinToolButton icon="connect" size={35} big title={t("connect_quick_connect_site")}
                            pressed={connectMenuOpen} onClick={toggleConnectMenu} />
             {connectMenuOpen && (
-              <div className="fx-menu-popup fx-connect-menu" style={{ top: '100%', right: 0 }}>
-                <button className="fx-menu-row" onClick={() => { setConnectMenuOpen(false); document.getElementById('qc-host')?.focus() }}>
+              <div className="fx-menu-popup fx-connect-menu">
+                <button className="fx-menu-row" onClick={() => openQuickConnect()}>
                   <span className="fx-menu-check" />
                   <span className="fx-menu-label">{t("quick_connect")}</span>
                 </button>
@@ -1044,12 +1240,22 @@ export default function App() {
                   <span className="fx-menu-check" />
                   <span className="fx-menu-label">{t("site_manager")}</span>
                 </button>
+                {quickHistory.length > 0 && <>
+                  <div className="fx-menu-sep" />
+                  <div className="px-3 py-1 text-xs text-muted-foreground">{t('quick_connect_history')}</div>
+                  {quickHistory.slice(0, 5).map(entry => (
+                    <button key={quickHistoryKey(entry)} className="fx-menu-row" onClick={() => openQuickConnect(entry)}>
+                      <span className="fx-menu-check" />
+                      <span className="fx-menu-label">{quickAddress(entry)}</span>
+                      <span className="fx-menu-key">{entry.user}</span>
+                    </button>
+                  ))}
+                </>}
                 {connectSites.length > 0 && <div className="fx-menu-sep" />}
                 {connectSites.map(s => (
                   <button key={s.id} className="fx-menu-row" onClick={() => connectFromMenu(s)}>
                     <span className="fx-menu-check" />
                     <span className="fx-menu-label">{s.name}</span>
-                    <span className="fx-menu-key">{s.host}</span>
                   </button>
                 ))}
               </div>
@@ -1073,7 +1279,7 @@ export default function App() {
         <span className="fx-q-field">{t("server_or_url")}</span>
         <WinInput id="qc-host" style={{ flex: '1.6', minWidth: 90 }} placeholder="ftp.example.com"
                   value={qc.host} onChange={(e) => setQc({ ...qc, host: e.target.value })}
-                  onKeyDown={(e) => e.key === 'Enter' && quickConnect()} />
+                  onKeyDown={(e) => e.key === 'Enter' && runQuickConnect()} />
         <span className="fx-q-field">{t("port")}</span>
         <WinInput style={{ width: 50 }} value={qc.port}
                   onChange={(e) => setQc({ ...qc, port: e.target.value.replace(/\D/g, '') })} />
@@ -1083,7 +1289,7 @@ export default function App() {
         <span className="fx-q-field">{t("password")}</span>
         <WinInput style={{ width: 100 }} type="password" value={qc.pass}
                   onChange={(e) => setQc({ ...qc, pass: e.target.value })} />
-        <WinButton compact onClick={quickConnect} disabled={!qc.host.trim()}>
+        <WinButton compact className="shrink-0 gap-2 px-3" onClick={() => runQuickConnect()} disabled={!qc.host.trim()}>
           <Ico name="app" size={13} /> {t("connect")} </WinButton>
         <span className="fx-tool-sep" />
         <WinCheck checked={syncBrowse} onChange={setSyncBrowse} label={t("synchronized_browsing")} />
@@ -1109,20 +1315,22 @@ export default function App() {
       <div className="fx-main" style={{ gridTemplateColumns: gridCols }}>
         {showTree && homePath && <DirTree home={homePath} onNavigate={navLocal}
           currentPath={localDir} onContextMenu={ctxMenu.openMenu} />}
-        <FilePane highlightRules={highlightRules} pane="local" title={t("local_browser")} entries={sortedLocal} selected={localSel}
+        <FilePane highlightRules={highlightRules} pane="local" title={t("local_browser")} entries={sortedLocal} selectedNames={localNames}
           marks={localMarks} address={localDir} connected={connected} diskFree={diskFree}
           sort={sortLocal} onNavigate={localUp} onRefresh={refreshLocal}
-          onSelect={(i) => { setLocalSel(i); setActivePane('local') }}
+          onFocus={() => { listSearch.current = null; setActivePane('local') }}
+          onSelect={(i, options) => { listSearch.current = null; setLocalSel(i, options); setActivePane('local') }}
           onActivate={activateLocal} onAction={(a, target) => paneAction('local', a, target)}
           onAddressGo={navLocal} onHome={() => navLocal(homePath)}
           onContextMenu={ctxMenu.openMenu}
           onDropTransfer={(dir, name, isDir) => enqueue(dir, name, isDir)} />
         <FilePane highlightRules={highlightRules} pane="remote" title={t("remote_browser")}
-          entries={sortedRemote} selected={remoteSel}
+          entries={sortedRemote} selectedNames={remoteNames}
           marks={remoteMarks} address={remoteDir || ''} connected={connected && !!remoteDir}
           host={currentSite ? `${currentSite.host}` : ''} sort={sortRemote}
           onNavigate={remoteUp} onRefresh={refreshRemote}
-          onSelect={(i) => { setRemoteSel(i); setActivePane('remote') }}
+          onFocus={() => { listSearch.current = null; setActivePane('remote') }}
+          onSelect={(i, options) => { listSearch.current = null; setRemoteSel(i, options); setActivePane('remote') }}
           onActivate={activateRemote} onAction={(a, target) => paneAction('remote', a, target)}
           onAddressGo={(p) => api.remoteList(p)} onHome={() => api.remoteList('/')}
           onContextMenu={ctxMenu.openMenu}
@@ -1189,7 +1397,7 @@ export default function App() {
             )}
             {bottomTab === 'both' && <div className="fx-splitter fx-splitter-vertical" {...splitterProps('width')} />}
             {bottomTab !== 'queue' && (
-              <div className="fx-log fx-scroll" style={{ flex: 1 }}>
+              <div className="fx-log fx-scroll" style={{ flex: 1 }} onContextMenu={openLogMenu}>
                 {log.length ? log.map((l, i) => {
                   const m = l.text.match(/^(\[[^\]]+\])\s*(.*)$/)
                   return (
@@ -1223,7 +1431,13 @@ export default function App() {
       <BookmarkManager open={bookmarkOpen} onOpenChange={setBookmarkOpen} siteId={bookmarkSiteId}
         localPath={localDir || ''} remotePath={connected ? remoteDir || '' : ''} initialAdd={bookmarkMode === 'add'} />
       <FiltersDialog open={filtersOpen} onOpenChange={setFiltersOpen} />
-      <SiteManager open={siteManagerOpen} onOpenChange={setSiteManagerOpen}
+      <QuickConnectDialog initial={quickConnectDraft} history={quickHistory} onConnect={quickConnect}
+        onClose={() => setQuickConnectDraft(null)} onSiteDraft={quickSiteDraft}
+        onRemoveHistory={key => storeQuickHistory(uiPref.get('quickConnectHistory', []).filter(item => quickHistoryKey(item) !== key))} />
+      <SiteManager open={siteManagerOpen} initialSite={newSiteDraft} onOpenChange={open => {
+        setSiteManagerOpen(open)
+        if (!open) setNewSiteDraft(null)
+      }}
         onConnected={(site) => { setCurrentSite(site); applySiteLocalPath(site) }} />
       <ProxyManager open={proxyManagerOpen} onOpenChange={setProxyManagerOpen} />
       <OptionsDialog open={optionsOpen} onOpenChange={setOptionsOpen}
@@ -1275,6 +1489,21 @@ export default function App() {
         <WinInput autoFocus style={{ width: '100%' }} value={prompt?.value || ''}
           onChange={(e) => setPrompt(p => ({ ...p, value: e.target.value }))}
           onKeyDown={(e) => { if (e.key === 'Enter' && prompt) { prompt.apply(prompt.value); setPrompt(null) } }} />
+      </WinDialog>
+
+      <WinDialog open={!!deleteConfirmation} title={t("delete")} width={330}
+        onClose={() => setDeleteConfirmation(null)}
+        footer={<>
+          <WinButton variant="outline" onClick={() => setDeleteConfirmation(null)}>{t("cancel")}</WinButton>
+          <WinButton onClick={() => {
+            const confirmation = deleteConfirmation
+            setDeleteConfirmation(null)
+            void confirmation?.remove()
+          }}>{t("delete")}</WinButton>
+        </>}>
+        {deleteConfirmation && (deleteConfirmation.selected.length === 1
+          ? t("delete_value", [deleteConfirmation.selected[0].name])
+          : t("delete_items_value", [deleteConfirmation.selected.length]))}
       </WinDialog>
 
       <WinContextMenu menu={ctxMenu.menu} onClose={ctxMenu.closeMenu} />

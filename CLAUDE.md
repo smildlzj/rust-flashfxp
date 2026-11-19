@@ -37,6 +37,7 @@ npm --prefix ui run build                       # 前端构建
 | 架构导航、专题设计 | `docs/architecture/README.md` |
 | 架构总览（分层/模块/关键流程） | `docs/architecture/overview.md` |
 | 开发流程、命令全表、常见坑 | `docs/development.md` |
+| 调研与实现 FlashFXP 原版功能 | `docs/flashfxp-feature-guide.md` |
 | 测试规范、本地测试服务器、UI 自动化驱动 | `docs/testing.md` |
 | 数据存储与配置文件 | `docs/configuration.md` |
 | 怎么编写 / 维护本项目文档 | `docs/writing-guide.md` |

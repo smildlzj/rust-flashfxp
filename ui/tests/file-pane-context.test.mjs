@@ -43,7 +43,7 @@ for (const pane of ['local', 'remote']) {
         let menu
         let called
         const element = FilePane({
-          pane, entries, selected, address: '/root', connected: true,
+          pane, entries, selectedNames: new Set(selected == null ? [] : [entries[selected].name]), address: '/root', connected: true,
           onSelect: () => {}, // React selection has not rerendered the saved menu callback yet.
           onContextMenu: (_event, items) => { menu = items },
           onAction: (...args) => { called = args },
@@ -58,3 +58,29 @@ for (const pane of ['local', 'remote']) {
     }
   }
 }
+
+test('remote file row Refresh invokes the pane refresh handler', () => {
+  let menu
+  let refreshed = 0
+  const element = FilePane({
+    pane: 'remote', entries: [{ name: 'B.txt' }], selectedNames: new Set(),
+    onSelect: () => {},
+    onContextMenu: (_event, items) => { menu = items },
+    onRefresh: () => { refreshed++ },
+  })
+  findRow(element).props.onContextMenu({})
+  menu.find(item => item.key === 'F5').act()
+  assert.equal(refreshed, 1)
+})
+
+test('remote file menu exposes View and Edit, with shortcuts', () => {
+  let menu
+  const element = FilePane({
+    pane: 'remote', entries: [{ name: 'B.txt' }], selectedNames: new Set(),
+    connected: true, onSelect: () => {},
+    onContextMenu: (_event, items) => { menu = items },
+  })
+  findRow(element).props.onContextMenu({})
+  assert.deepEqual(Array.from(menu.filter(item => ['Ctrl+V', 'Ctrl+E'].includes(item.key)), item => item.label),
+    ['查看文件', '编辑文件'])
+})

@@ -287,6 +287,19 @@ input, textarea, [data-user-select="text"], .fx-select-text { -webkit-user-selec
 .fx-tool-group:not(.right) .fx-tool-btn { width: 36px; height: 36px; }
 .fx-tool-group.right { margin-left: auto; padding-right: 0; }
 .fx-tool-connect { position: relative; display: flex; }
+.fx-connect-menu {
+  left: auto;
+  right: 0;
+  width: max-content;
+  max-width: 360px;
+}
+.fx-connect-menu .fx-menu-row { padding-inline: 12px; }
+.fx-connect-menu :is(.fx-menu-label, .fx-menu-key) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fx-connect-menu .fx-menu-key { max-width: 44%; }
 .fx-tool-sep { width: 1px; height: 26px; margin: 0 8px; background: var(--border); }
 .fx-tool-btn {
   width: 30px; height: 30px; padding: 0;

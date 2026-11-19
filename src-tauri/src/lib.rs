@@ -1,6 +1,8 @@
 //! Tauri 后端：把核心库（协议/传输/存储）桥接为前端 command + event
 use std::sync::mpsc as std_mpsc;
 use std::sync::Mutex;
+mod editor_window;
+mod file_edit;
 mod instance;
 mod session_state;
 mod windowing;
@@ -120,7 +122,7 @@ fn attach_session(app: &AppHandle, label: &str) -> Result<(), String> {
     let session = Arc::new(Session {
         lease, cmd_tx, current_site: Mutex::new(None), connected: std::sync::atomic::AtomicBool::new(false), tasks: Mutex::new(Default::default()),
         restored: Mutex::new(Default::default()), cancelled: Mutex::new(Default::default()),
-        ids: Mutex::new(Default::default()),
+        ids: Mutex::new(Default::default()), documents: Mutex::new(Default::default()), editor_requests: Mutex::new(Vec::new()),
     });
     session_state::insert(label.to_string(), session.clone())?;
     tauri::async_runtime::spawn(run_backend(cmd_rx, event_tx));
@@ -168,6 +170,7 @@ pub fn run() {
             attach_session(app.handle(), main.label())?;
             windowing::attach(&main);
             windowing::native_menu(app.handle())?;
+            let _ = main.maximize();
 
             // 托盘：菜单栏常驻图标，关窗驻留，左键切换窗口显隐
             {
@@ -208,6 +211,7 @@ pub fn run() {
                     .build(app)?;
             }
 
+            main.show()?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -226,6 +230,14 @@ pub fn run() {
             quick_connect,
             connect_site,
             disconnect,
+            editor_window::show_file_editor,
+            editor_window::take_file_editor_requests,
+            editor_window::focus_file_editor,
+            file_edit::file_edit_open,
+            file_edit::file_edit_modified,
+            file_edit::file_edit_save,
+            file_edit::file_edit_close,
+            file_edit::file_edit_reopen,
             local_list,
             remote_list,
             mkdir_local,
@@ -248,6 +260,7 @@ pub fn run() {
             queue_clear_finished,
             home_dir,
             pick_folder,
+            pick_associated_app,
             disk_info,
             tree_list,
             transfer_cancel,
@@ -267,15 +280,29 @@ pub fn run() {
 // ---------------- 连接 ----------------
 
 #[tauri::command]
-fn quick_connect(window: WebviewWindow, host: String, port: u16, user: String, pass: String) -> Result<(), String> {
+fn quick_connect(
+    window: WebviewWindow, host: String, port: u16, user: String, pass: String,
+    protocol: Option<String>, remote_path: Option<String>,
+) -> Result<(), String> {
+    let protocol = protocol.unwrap_or_else(|| "ftp".into());
+    if !matches!(protocol.as_str(), "ftp" | "sftp" | "ftps_implicit" | "ftps_explicit") {
+        return Err(flashfxp_lib::localized!("不支持的连接协议", "Unsupported connection protocol"));
+    }
+    if host.trim().is_empty() || port == 0 ||
+        [host.as_str(), user.as_str(), pass.as_str(), remote_path.as_deref().unwrap_or("")]
+            .iter().any(|value| value.contains(['\r', '\n', '\0'])) ||
+        remote_path.as_deref().is_some_and(|path| !path.starts_with('/')) {
+        return Err(flashfxp_lib::localized!("无效的快速连接地址或参数", "Invalid quick connect address or settings"));
+    }
+    let name = if host.contains(':') { format!("[{host}]:{port}") } else { format!("{host}:{port}") };
     let site = Site {
         id: 0,
         group_id: None,
-        name: format!("{host}:{port}"),
+        name,
         host,
         port,
-        protocol: "ftp".into(),
-        username: Some(user),
+        protocol,
+        username: (!user.is_empty()).then_some(user),
         password: Some(pass),
         encoding: "auto".into(),
         passive_mode: true,
@@ -283,7 +310,7 @@ fn quick_connect(window: WebviewWindow, host: String, port: u16, user: String, p
         proxy_id: None,
         tls_accept_invalid: false,
         local_path: None,
-        remote_path: None,
+        remote_path,
         account: None,
         notes: String::new(),
         login_type: "normal".into(),
@@ -609,6 +636,20 @@ fn pick_folder() -> Option<String> {
     rfd::FileDialog::new()
         .pick_folder()
         .map(|p| p.to_string_lossy().into_owned())
+}
+
+/// Pick a viewer or editor through the same native dialog used for local paths.
+#[tauri::command]
+fn pick_associated_app() -> Option<String> {
+    let dialog = rfd::FileDialog::new().set_title(flashfxp_lib::localized!(
+        "选择查看器或编辑器",
+        "Choose a viewer or editor"
+    ));
+    #[cfg(target_os = "macos")]
+    let dialog = dialog.set_directory("/Applications").add_filter("macOS App", &["app"]);
+    #[cfg(target_os = "windows")]
+    let dialog = dialog.add_filter("Windows Application", &["exe"]);
+    dialog.pick_file().map(|path| path.to_string_lossy().into_owned())
 }
 
 /// 菜单「会话 > 退出(X)」：与 macOS 原生关闭按钮等价，正常结束应用进程

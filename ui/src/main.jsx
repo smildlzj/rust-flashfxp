@@ -1,6 +1,8 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
+import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import App from './App.jsx'
+import FileEditorWindow from './components/FileEditorWindow.jsx'
 import { LanguageProvider } from './LanguageContext.jsx'
 import './index.css'
 
@@ -38,10 +40,11 @@ class FxErrorBoundary extends React.Component {
 }
 
 try {
+  const MainWindow = getCurrentWebviewWindow().label.startsWith('file-edits-') ? FileEditorWindow : App
   createRoot(document.getElementById('root')).render(
     <React.StrictMode>
       <FxErrorBoundary>
-        <LanguageProvider><App /></LanguageProvider>
+        <LanguageProvider><MainWindow /></LanguageProvider>
       </FxErrorBoundary>
     </React.StrictMode>
   )

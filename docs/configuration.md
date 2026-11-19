@@ -18,7 +18,7 @@ rusqlite 数据库，表：`sites` / `groups` / `proxies` / `queue_items` / `app
 
 ### `~/Library/Application Support/com.github.smildlzj.rustflashfxp/window_state.json`
 
-窗口位置与尺寸（逻辑像素单位）。窗口 Moved/Resized 事件防抖 500ms 后原子替换写入，启动时恢复；dev 重启为强杀进程，不依赖退出钩子。
+保存普通窗口的位置与尺寸（逻辑像素单位）。移动和缩放事件防抖 500ms 后原子写入。主窗口启动时先恢复普通窗口尺寸和位置，再最大化显示。最大化和全屏时的尺寸不写入。
 
 ## 关联文档
 

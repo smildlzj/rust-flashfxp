@@ -7,8 +7,8 @@ import { humanSize, fmtTime } from '../api.js'
 const MARK_TXT = { same: '·', only: '＋', diff: '▲' }
 
 export default function FilePane({
-  pane, title, entries, selected, marks, address, connected, diskFree, host, sort,
-  onNavigate, onRefresh, onSelect, onActivate, onAction, onAddressGo, onHome,
+  pane, title, entries, selectedNames, marks, address, connected, diskFree, host, sort,
+  onNavigate, onRefresh, onFocus, onSelect, onActivate, onAction, onAddressGo, onHome,
   onContextMenu, onDropTransfer, highlightRules = [],
 }) {
   const [dragOver, setDragOver] = useState(false)
@@ -30,9 +30,17 @@ export default function FilePane({
 
   const rowMenu = (e, i) => {
     const target = entries[i]
-    onSelect(i)
+    e.currentTarget?.closest('[data-file-list]')?.focus({ preventScroll: true })
+    const hasFile = selectedNames.has(target.name)
+      ? entries.some(entry => !entry.isDir && selectedNames.has(entry.name))
+      : !target.isDir
+    const fileActionDisabled = !hasFile || (!isLocal && !connected)
+    onSelect(i, { context: true })
     onContextMenu && onContextMenu(e, [
       { label: isLocal ? t("transfer_upload_to_remote") : t("transfer_download_to_local"), disabled: !connected, act: () => onAction('transfer', target) },
+      { sep: true },
+      { label: t("view_file"), key: 'Ctrl+V', disabled: fileActionDisabled, act: () => onAction('view', target) },
+      { label: t("edit_file"), key: 'Ctrl+E', disabled: fileActionDisabled, act: () => onAction('edit', target) },
       { sep: true },
       { label: t("rename_2"), act: () => onAction('rename', target) },
       { label: t("delete"), key: 'Del', act: () => onAction('delete', target) },
@@ -82,7 +90,8 @@ export default function FilePane({
       onDrop={handleDrop}
     >
       {/* 文件列表（ListView 报表） */}
-      <div className="fx-list-wrap fx-scroll" onContextMenu={bgMenu}>
+      <div className="fx-list-wrap fx-scroll" data-file-list={pane} tabIndex={0}
+        aria-label={title} onFocus={onFocus} onContextMenu={bgMenu}>
         <table className="fx-list listview">
           <colgroup>
             <col />
@@ -112,15 +121,19 @@ export default function FilePane({
             {entries.map((e, i) => (
               <tr
                 key={e.name}
+                data-file-row
                 draggable
-                className={`${selected === i ? 'fx-selected' : ''} ${marks && marks[e.name] ? `fx-mark-${marks[e.name]}` : ''}`}
+                className={`${selectedNames.has(e.name) ? 'fx-selected' : ''} ${marks && marks[e.name] ? `fx-mark-${marks[e.name]}` : ''}`}
                 onDragStart={(ev) => {
                   ev.dataTransfer.setData('application/x-fx-drag', JSON.stringify({ pane, name: e.name, isDir: e.isDir }))
                   ev.dataTransfer.setData('text/plain', e.name)
                   ev.dataTransfer.effectAllowed = 'copy'
                 }}
-                onClick={() => onSelect(i)}
-                onDoubleClick={() => onActivate(i)}
+                onClick={ev => {
+                  ev.currentTarget.closest('[data-file-list]')?.focus({ preventScroll: true })
+                  onSelect(i, ev)
+                }}
+                onDoubleClick={ev => { if (!ev.shiftKey && !ev.metaKey && !ev.ctrlKey) onActivate(i) }}
                 onContextMenu={(ev) => rowMenu(ev, i)}
               >
                 <td title={e.name}>
@@ -128,7 +141,7 @@ export default function FilePane({
                     <span className="fx-cell-icon">
                       <Ico name={e.isDir ? 'folder' : 'file'} size={16} />
                     </span>
-                    <span className="fx-cell-name" style={{ color: selected === i ? undefined : highlightColor(e.name, highlightRules) }}>{e.name}</span>
+                    <span className="fx-cell-name" style={{ color: selectedNames.has(e.name) ? undefined : highlightColor(e.name, highlightRules) }}>{e.name}</span>
                     {marks && marks[e.name] && <span className="fx-mark">{MARK_TXT[marks[e.name]]}</span>}
                   </div>
                 </td>

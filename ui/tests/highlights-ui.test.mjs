@@ -27,7 +27,7 @@ const find=(tree,label)=>nodes(tree).find(n=>n.props?.['aria-label']===label || 
 test('filename colors include directories while selection and comparison stay intact',async()=>{
   const {render}=await harness('FilePane')
   for(const pane of ['local','remote']) {
-    const tree=await render({pane,entries:[{name:'docs.txt',isDir:true},{name:'a.txt'}],selected:1,marks:{'docs.txt':'diff'},highlightRules:[{mask:'*.txt',color:'#123456'}]})
+    const tree=await render({pane,entries:[{name:'docs.txt',isDir:true},{name:'a.txt'}],selectedNames:new Set(['a.txt']),marks:{'docs.txt':'diff'},highlightRules:[{mask:'*.txt',color:'#123456'}]})
     const names=nodes(tree).filter(n=>n.props?.className==='fx-cell-name')
     assert.equal(names.find(n=>n.props.children==='docs.txt').props.style.color,'#123456')
     assert.equal(names.find(n=>n.props.children==='a.txt').props.style.color,undefined)

@@ -7,6 +7,8 @@
 ## 文档导航
 
 - [架构总览](./overview.md)
+- [快速连接](quick-connect.md)
+- [文件查看与编辑](file-editing.md)
 
 ## 当前已确认约束
 

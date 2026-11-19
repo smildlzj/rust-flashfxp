@@ -36,7 +36,7 @@ function PathField({ value, onChange, placeholder, remote }) {
   )
 }
 
-export default function SiteManager({ open, onOpenChange, onConnected }) {
+export default function SiteManager({ open, initialSite, onOpenChange, onConnected }) {
   const [sites, setSites] = useState([])
   const [groups, setGroups] = useState([])
   const [proxies, setProxies] = useState([])
@@ -54,7 +54,13 @@ export default function SiteManager({ open, onOpenChange, onConnected }) {
     // 原版打开站点管理器默认选中首个站点并显示「常规」表单
     setEdit(prev => prev || (list.length ? { ...list[0] } : null))
   }
-  useEffect(() => { if (open) { setTab('general'); setError(''); reload().catch(e => setError(String(e))) } }, [open])
+  useEffect(() => {
+    if (!open) return
+    setTab('general')
+    setError('')
+    if (initialSite) setEdit({ ...blankSite(), ...initialSite })
+    reload().catch(e => setError(String(e)))
+  }, [open, initialSite])
 
   const set = (k, v) => setEdit(e => ({ ...e, [k]: v }))
   const close = () => onOpenChange(false)

@@ -147,7 +147,7 @@ This checklist follows the categories in the [official FlashFXP feature list](ht
 - [ ] Remote search and recursive directory space calculation.
 - [ ] Unix permission changes, recursive chmod, and file attribute editing.
 - [ ] Same-side file copying/moving, batch multi-selection, and transfer-as-name operations.
-- [ ] Remote viewing/editing, automatic upload on save, multi-file editing, and editor associations.
+- [x] Remote viewing and editing, manual or automatic upload on save, multiple open files, and file associations. The built-in editor supports UTF-8 text, and managed files are limited to 2 MiB.
 - [x] Folder bookmarks with local/remote paths and synchronized-browsing settings; ordered filename-mask color rules.
 - [ ] Marked lists and file filtering.
 - [ ] Remote directory caching and STAT fast listings.
@@ -185,7 +185,7 @@ Additional reference: FlashFXP's [Sites menu](https://www.flashfxp.com/webhelp/T
 | Change interface language | Options → Language → 简体中文 / English |
 | Open Site Manager | F4 or the Sites menu |
 | Refresh both file lists | F5 or the refresh button |
-| Enter a temporary connection | Quick Connect bar |
+| Enter a temporary connection | Connect menu → Quick Connect, or F8 |
 | Navigate directories | Directory tree or address bar |
 | Folder bookmarks | Star beside an address bar / Ctrl+B; Site Manager → Bookmarks |
 | Filename pattern colors | Options → Filters → Highlights |
