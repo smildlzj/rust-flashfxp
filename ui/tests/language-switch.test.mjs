@@ -16,9 +16,10 @@ const deleted = []
 const listings = []
 let openContextMenu
 let editorSave
+let sessionEvent
 const effects = []
 const windowTitles = []
-const context = vm.createContext({ localStorage: { getItem: () => null }, window: {}, document: {}, setTimeout, clearTimeout })
+const context = vm.createContext({ localStorage: { getItem: () => null }, window: {}, document: { documentElement: {} }, setTimeout, clearTimeout, setInterval, clearInterval })
 const module = new vm.SourceTextModule(code, { context })
 const stub = () => null
 const react = { ...React, useState: initial => {
@@ -31,7 +32,7 @@ await module.link(async name => {
     : name.includes('i18n') ? i18n
     : name.includes('quick-connect') ? quickConnect
     : name.includes('LanguageContext') ? { useLanguage: () => ({ language: i18n.getLocale(), setLanguage: i18n.setCurrentLocale }) }
-    : name.endsWith('/api.js') ? { api: { sites: async () => [{ id: 1, name: 'Saved Site', host: 'actual.test' }], onFileEditorSave: async handler => { editorSave = handler; return stub }, setWindowTitle: async title => { windowTitles.push(title) }, newSession: async () => { newSessions++ }, deleteLocal: async paths => deleted.push(...paths), deleteRemote: async paths => deleted.push(...paths), localList: async path => listings.push(['local', path]), remoteList: async path => listings.push(['remote', path]) }, init: stub, onEvent: stub, remoteJoin: (base, name) => `${base}/${name}`, remoteParent: stub, humanSize: String }
+    : name.endsWith('/api.js') ? { api: { setLanguage: async () => {}, homeDir: async () => '/home', sites: async () => [{ id: 1, name: 'Saved Site', host: 'actual.test' }], onFileEditorSave: async handler => { editorSave = handler; return stub }, setWindowTitle: async title => { windowTitles.push(title) }, newSession: async () => { newSessions++ }, deleteLocal: async paths => deleted.push(...paths), deleteRemote: async paths => deleted.push(...paths), localList: async path => listings.push(['local', path]), remoteList: async path => listings.push(['remote', path]) }, init: stub, onEvent: handler => { sessionEvent = handler }, remoteJoin: (base, name) => `${base}/${name}`, remoteParent: stub, humanSize: String }
     : name.includes('winicons') ? { Ico: stub, FxIconDefs: stub, AppLogo: stub }
     : name.includes('win32') ? Object.fromEntries(['WinMenuBar','WinButton','WinInput','WinCheck','WinDialog','WinFieldset','WinToolButton','WinContextMenu','IconTip'].map(k => [k,stub]).concat([['useWinContextMenu', () => ({ openMenu: (_event, items) => { openContextMenu = items } })]]))
     : { default: stub }
@@ -317,5 +318,24 @@ test('session menu, connect dropdown, and F8 open the same Quick Connect dialog'
     dialog(render()).props.onClose()
   } finally {
     cleanup()
+  }
+})
+
+test('FTP commands and replies appear in the window log in arrival order', async () => {
+  effects.length = 0
+  render()
+  const stop = effects.find(effect => effect.fn.toString().includes('onEvent(handleEvent)')).fn()
+  try {
+    await new Promise(setImmediate)
+    sessionEvent({ FtpLog: { command: true, peer: 'Destination', text: 'DELE /old.txt' } })
+    sessionEvent({ FtpLog: { command: false, peer: 'Destination', text: '250 File deleted' } })
+    const lines = all(render()).filter(node => node.props?.className === 'fx-log-line')
+    const rows = lines.slice(-2).map(line => line.props.children.props.children[2].props)
+    assert.deepEqual(rows.map(({ level, text }) => [level, text]), [
+      ['command', '[Destination] DELE /old.txt'],
+      ['reply', '[Destination] 250 File deleted'],
+    ])
+  } finally {
+    stop()
   }
 })

@@ -25,6 +25,7 @@ pub enum UiEvent {
     LocalList { path: PathBuf, entries: Vec<Entry> },
     RemoteList { path: String, entries: Vec<Entry> },
     Notify { level: Level, text: String },
+    FtpLog { command: bool, peer: Option<String>, text: String },
     TransferStarted { id: u64, size: u64 },
     TransferProgress { id: u64, transferred: u64 },
     TransferFinished { id: u64, ok: bool, error: Option<String> },

@@ -8,6 +8,7 @@ use flashfxp_lib::{
 use sha2::{Digest, Sha256};
 use std::{
     collections::HashMap,
+    future::Future,
     io::Write,
     path::{Path, PathBuf},
     sync::{Arc, Weak},
@@ -161,7 +162,17 @@ async fn network<T>(operation: impl Future<Output = Result<T, String>>) -> Resul
         .map_err(|_| localized!("文件操作超时", "The file operation timed out"))?
 }
 
-use std::future::Future;
+async fn log_remote_operation<T>(window: &WebviewWindow, operation: impl Future<Output = T>) -> T {
+    let owner = window.clone();
+    flashfxp_lib::session::with_ftp_log(
+        None,
+        move |event| {
+            let _ = owner.emit_to(EventTarget::webview_window(owner.label()), "fx-event", event);
+        },
+        operation,
+    )
+    .await
+}
 
 fn launch(program: &Path, file: &Path) -> Result<(), String> {
     if !program.is_absolute() {
@@ -264,10 +275,10 @@ pub async fn file_edit_open(
                 "The site changed. Reopen the file from the file list"
             ));
         }
-        let original = network(async {
+        let original = log_remote_operation(&owner, network(async {
             let mut session = RemoteSession::open(&site, proxy.as_ref()).await?;
             read_remote(&mut session, &path).await
-        })
+        }))
         .await?;
         let name = site.name.clone();
         (
@@ -495,7 +506,11 @@ async fn save_from_editor(
     if remote.is_some() {
         publish("started", None);
     }
-    let result = save_document(doc, text, fingerprint).await;
+    let operation = save_document(doc, text, fingerprint);
+    let result = match crate::editor_window::owner(window) {
+        Ok(owner) => log_remote_operation(&owner, operation).await,
+        Err(_) => operation.await,
+    };
     match &result {
         Ok(()) => publish("saved", None),
         Err(error) if remote.is_some() => publish("failed", Some(error)),
@@ -598,10 +613,11 @@ pub async fn file_edit_reopen(
     } else {
         None
     };
-    let bytes = network(async {
+    let owner = crate::editor_window::owner(&window)?;
+    let bytes = log_remote_operation(&owner, network(async {
         let mut session = RemoteSession::open(site, proxy.as_ref()).await?;
         read_remote(&mut session, path).await
-    })
+    }))
     .await?;
     let value = if let (Some((_, local)), Some(current)) = (&doc.external, current) {
         let local = local.clone();

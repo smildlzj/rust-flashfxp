@@ -316,6 +316,12 @@ impl App {
                     self.remote_sel = None;
                     self.remote_marks.clear();
                 }
+                UiEvent::FtpLog { peer, text, .. } => {
+                    match peer {
+                        Some(peer) => self.log(&format!("[{peer}] {text}")),
+                        None => self.log(&text),
+                    }
+                }
                 UiEvent::Notify { level, text } => {
                     self.push_toast(&text, level == flashfxp_lib::bus::Level::Error);
                 }

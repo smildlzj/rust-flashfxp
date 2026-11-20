@@ -73,6 +73,10 @@
 
 `UiCmd::RelayEnqueue` → `run_relay`（src/session/relay.rs）→ 源/目标各开独立 `RemoteSession` → `relay_file` 以 `tokio::join!` 并发 `read_chunks`（源读）与 `write_chunks`（目标写），中间 8×256KB 有界通道做背压——目标写不动时源端自动暂停。
 
+### FTP 会话日志
+
+参见 [FTP 会话日志](ftp-session-log.md)。
+
 ### 窗口状态持久化
 
 窗口 Moved/Resized 事件 → 内存队列 + 防抖 500ms → 写 `window_state.json`（逻辑像素单位）；启动时先由 `restore_win_state` 恢复普通尺寸和位置，再最大化显示主窗口。最大化和全屏期间跳过持久化。

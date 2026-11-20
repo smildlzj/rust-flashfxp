@@ -65,7 +65,7 @@ function AddressCombo({ value, onGo, disabled, history = [] }) {
 }
 
 function LogBody({ text, level = 'info' }) {
-  const cls = { error: 'fx-log-err', success: 'fx-log-ok', command: 'fx-log-cmd', info: 'fx-log-info' }[level] || 'fx-log-info'
+  const cls = { error: 'fx-log-err', success: 'fx-log-ok', command: 'fx-log-cmd', reply: 'fx-log-reply', info: 'fx-log-info' }[level] || 'fx-log-info'
   return <span className={cls}>{text}</span>
 }
 
@@ -111,9 +111,15 @@ export default function App() {
 
   const [queue, setQueue] = useState([])
   const [log, setLog] = useState([])
+  const logPanel = useRef(null)
+  const followLog = useRef(true)
   const [showBottom, setShowBottom] = useState(() => uiPref.get('startupBottom', true))
   // 原版默认布局：目录树显示、队列与日志并排、快速连接栏可见
   const [bottomTab, setBottomTab] = useState('both')
+  useEffect(() => {
+    const panel = logPanel.current
+    if (panel && followLog.current) panel.scrollTop = panel.scrollHeight
+  }, [log, bottomTab, showBottom])
   const [bottomHeight, setBottomHeight] = useState(() => {
     const value = uiPref.get('bottomHeight', 220)
     return Number.isFinite(value) ? Math.max(100, value) : 220
@@ -238,7 +244,7 @@ export default function App() {
         selection.addRange(range)
       } },
       { sep: true },
-      { label: t('clear_log'), disabled: !log.length, act: () => setLog([]) },
+      { label: t('clear_log'), disabled: !log.length, act: () => { followLog.current = true; setLog([]) } },
     ])
   }
   const [appVersion, setAppVersion] = useState('…')
@@ -394,9 +400,13 @@ export default function App() {
       setRemoteSel(null)
       setRemoteMarks({})
       addLog(t("listing_complete_value_value_items", [p.RemoteList.path, p.RemoteList.entries.length]))
+    } else if (p.FtpLog) {
+      const { command, peer, text } = p.FtpLog
+      addLog(peer ? `[${peer}] ${text}` : text, command ? 'command' : 'reply')
     } else if (p.Notify) {
       showNotice(p.Notify.text)
       if (p.Notify.level === 'error') addLog(t("error_value", [p.Notify.text]), p.Notify.level)
+      else if (p.Notify.level === 'info') addLog(p.Notify.text)
     } else if (p.TransferStarted) {
       setQueue(qs => qs.map(q => q.id === p.TransferStarted.id
         ? { ...q, size: p.TransferStarted.size, status: 'active' } : q))
@@ -1397,9 +1407,17 @@ export default function App() {
             )}
             {bottomTab === 'both' && <div className="fx-splitter fx-splitter-vertical" {...splitterProps('width')} />}
             {bottomTab !== 'queue' && (
-              <div className="fx-log fx-scroll" style={{ flex: 1 }} onContextMenu={openLogMenu}>
+              <div
+                ref={logPanel}
+                className="fx-log fx-scroll"
+                style={{ flex: 1 }}
+                onContextMenu={openLogMenu}
+                onScroll={({ currentTarget: panel }) => {
+                  followLog.current = panel.scrollHeight - panel.scrollTop - panel.clientHeight <= 2
+                }}
+              >
                 {log.length ? log.map((l, i) => {
-                  const m = l.text.match(/^(\[[^\]]+\])\s*(.*)$/)
+                  const m = l.text.match(/^(\[[^\]]+\]) ([\s\S]*)$/)
                   return (
                     <div className="fx-log-line" key={i}>
                       {m ? <><span className="fx-log-ts">{m[1]}</span> <LogBody text={m[2]} level={l.level} /></> : <LogBody text={l.text} level={l.level} />}

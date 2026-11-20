@@ -533,6 +533,7 @@ input, textarea, [data-user-select="text"], .fx-select-text { -webkit-user-selec
 .fx-log-line { white-space: pre-wrap; word-break: break-all; }
 .fx-log-ts { color: #16a34a; }
 .fx-log-cmd { color: var(--ring); }
+.fx-log-reply { color: var(--foreground); }
 .fx-log-ok { color: #16a34a; }
 .fx-log-err { color: #dc2626; }
 .fx-log-info { color: var(--muted-foreground); }

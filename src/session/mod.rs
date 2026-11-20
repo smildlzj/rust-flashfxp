@@ -1,4 +1,6 @@
 pub mod ftp;
+mod ftp_log;
+pub use ftp_log::with_ftp_log;
 pub mod list_parse;
 pub mod proxy;
 pub mod relay;

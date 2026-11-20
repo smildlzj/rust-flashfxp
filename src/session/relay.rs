@@ -3,7 +3,7 @@ use std::sync::mpsc::Sender;
 use tokio::sync::mpsc;
 
 use crate::bus::{remote_join, PipeMsg, RelayTask, UiEvent};
-use crate::session::RemoteSession;
+use crate::session::{ftp_log::with_ftp_events, RemoteSession};
 
 /// 站点互传：源站点与目标站点各持独立连接，数据经内存流水线直转（不落盘）。
 /// 有界通道（8×256KB）做背压：目标端写不动时源端自动暂停读取。
@@ -17,8 +17,16 @@ pub async fn run_relay(task: RelayTask, event_tx: Sender<UiEvent>) {
 }
 
 async fn exec_relay(task: &RelayTask, event_tx: &Sender<UiEvent>) -> Result<(), String> {
-    let mut src = RemoteSession::open(&task.src_site, task.src_proxy.as_ref()).await?;
-    let mut dst = RemoteSession::open(&task.dst_site, task.dst_proxy.as_ref()).await?;
+    let source = crate::localized!("源站", "Source");
+    let target = crate::localized!("目标站", "Destination");
+    let mut src = with_ftp_events(
+        event_tx.clone(), Some(source.clone()),
+        RemoteSession::open(&task.src_site, task.src_proxy.as_ref()),
+    ).await?;
+    let mut dst = with_ftp_events(
+        event_tx.clone(), Some(target.clone()),
+        RemoteSession::open(&task.dst_site, task.dst_proxy.as_ref()),
+    ).await?;
 
     // 判断源是文件还是目录：查父目录列表（SIZE 对部分服务器的目录也会返回值，不可靠）
     let name = task
@@ -33,7 +41,7 @@ async fn exec_relay(task: &RelayTask, event_tx: &Sender<UiEvent>) -> Result<(), 
     if !is_root {
         let parent = crate::bus::remote_parent(&task.src_path)
             .unwrap_or_else(|| "/".to_string());
-        match src.list(&parent).await {
+        match with_ftp_events(event_tx.clone(), Some(source.clone()), src.list(&parent)).await {
             Ok(entries) => match entries.iter().find(|e| e.name == name) {
                 Some(e) => is_dir = e.is_dir,
                 None => return Err(crate::localized!("源路径不存在: {}", "Source path does not exist: {}", task.src_path)),
@@ -43,17 +51,17 @@ async fn exec_relay(task: &RelayTask, event_tx: &Sender<UiEvent>) -> Result<(), 
     }
 
     if !is_dir {
-        let size = src.size(&task.src_path).await.unwrap_or(0);
+        let size = with_ftp_events(event_tx.clone(), Some(source.clone()), src.size(&task.src_path)).await.unwrap_or(0);
         let dst_file = remote_join(&task.dst_path, &name);
         let _ = event_tx.send(UiEvent::TransferStarted { id: task.id, size });
-        relay_file(&mut src, &mut dst, &task.src_path, &dst_file, task.id, 0, event_tx).await
+        relay_file(&mut src, &mut dst, &task.src_path, &dst_file, task.id, 0, event_tx, (&source, &target)).await
     } else {
         // 递归枚举源树
         let mut dirs: Vec<String> = Vec::new();
         let mut files: Vec<(String, String, u64)> = Vec::new();
         let mut queue = vec![(task.src_path.clone(), task.dst_path.clone())];
         while let Some((sdir, ddir)) = queue.pop() {
-            let entries = src.list(&sdir).await?;
+            let entries = with_ftp_events(event_tx.clone(), Some(source.clone()), src.list(&sdir)).await?;
             for e in &entries {
                 let spath = remote_join(&sdir, &e.name);
                 let dpath = remote_join(&ddir, &e.name);
@@ -69,13 +77,13 @@ async fn exec_relay(task: &RelayTask, event_tx: &Sender<UiEvent>) -> Result<(), 
         }
         let total: u64 = files.iter().map(|(_, _, s)| *s).sum();
         let _ = event_tx.send(UiEvent::TransferStarted { id: task.id, size: total });
-        let _ = dst.mkdir(&task.dst_path).await; // 根目录（已存在时忽略）
+        let _ = with_ftp_events(event_tx.clone(), Some(target.clone()), dst.mkdir(&task.dst_path)).await; // 根目录（已存在时忽略）
         for ddir in &dirs {
-            let _ = dst.mkdir(ddir).await; // 已存在时忽略
+            let _ = with_ftp_events(event_tx.clone(), Some(target.clone()), dst.mkdir(ddir)).await; // 已存在时忽略
         }
         let mut base: u64 = 0;
         for (spath, dpath, size) in &files {
-            relay_file(&mut src, &mut dst, spath, dpath, task.id, base, event_tx).await?;
+            relay_file(&mut src, &mut dst, spath, dpath, task.id, base, event_tx, (&source, &target)).await?;
             base += size;
         }
         Ok(())
@@ -90,12 +98,16 @@ async fn relay_file(
     id: u64,
     base: u64,
     event_tx: &Sender<UiEvent>,
+    (source, target): (&str, &str),
 ) -> Result<(), String> {
     let (tx, rx) = mpsc::channel::<PipeMsg>(8);
     // 生产者与消费者并发：源端读取与目标端写入同时进行（src/dst 是不同连接）
     let (p, c) = tokio::join!(
-        src.read_chunks(src_path, id, base, tx, event_tx),
-        dst.write_chunks(dst_path, rx),
+        with_ftp_events(
+            event_tx.clone(), Some(source.to_owned()),
+            src.read_chunks(src_path, id, base, tx, event_tx),
+        ),
+        with_ftp_events(event_tx.clone(), Some(target.to_owned()), dst.write_chunks(dst_path, rx)),
     );
     p?;
     c

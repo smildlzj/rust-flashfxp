@@ -346,3 +346,62 @@ async fn failed_initial_listing_restores_login_directory() {
     task.await.unwrap();
     server.finish();
 }
+
+#[tokio::test]
+async fn session_log_reports_real_replies_and_masks_authentication() {
+    let server = Server::start(vec![
+        ("USER test", "331 Password\r\n"),
+        ("PASS secret", "332 Account required\r\n"),
+        ("ACCT billing", "230 Logged in\r\n"),
+        ("TYPE I", "200 Binary\r\n"),
+        ("FEAT", "211-Extensions\r\n UTF8\r\n211 End\r\n"),
+        ("DELE /old.txt", "250 File deleted\r\n"),
+        ("DELE /missing", "550 File unavailable\r\n"),
+        ("RMD /missing", "550 Directory unavailable\r\n"),
+    ]);
+    let mut site = server.site();
+    site.account = Some("billing".into());
+    let (event_tx, events) = std::sync::mpsc::channel();
+    with_ftp_events(event_tx, Some("fixture".into()), async {
+        let mut conn = FtpConn::open(&site, None).await.unwrap();
+        assert!(!conn.feat_mlst().await);
+        conn.delete("/old.txt").await.unwrap();
+        assert!(conn.delete("/missing").await.is_err());
+    }).await;
+    server.finish();
+
+    let transcript: Vec<_> = events
+        .into_iter()
+        .map(|event| match event {
+            UiEvent::FtpLog { command, peer, text } => {
+                assert_eq!(peer.as_deref(), Some("fixture"));
+                (command, text)
+            }
+            other => panic!("unexpected event: {other:?}"),
+        })
+        .collect();
+    assert_eq!(
+        transcript,
+        [
+            (false, "220 Regression fixture"),
+            (true, "USER test"),
+            (false, "331 Password"),
+            (true, "PASS ********"),
+            (false, "332 Account required"),
+            (true, "ACCT ********"),
+            (false, "230 Logged in"),
+            (true, "TYPE I"),
+            (false, "200 Binary"),
+            (true, "FEAT"),
+            (false, "211-Extensions"),
+            (false, " UTF8"),
+            (false, "211 End"),
+            (true, "DELE /old.txt"),
+            (false, "250 File deleted"),
+            (true, "DELE /missing"),
+            (false, "550 File unavailable"),
+            (true, "RMD /missing"),
+            (false, "550 Directory unavailable"),
+        ].map(|(command, text)| (command, text.to_owned()))
+    );
+}

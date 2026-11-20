@@ -7,6 +7,7 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
 use crate::bus::{remote_join, Entry, TransferTask, UiCmd, UiEvent};
+use crate::session::ftp_log::with_ftp_events;
 use crate::session::make_decoder;
 use crate::session::proxy::dial_via_proxy;
 use crate::session::tls::make_connector;
@@ -584,9 +585,17 @@ pub async fn run_backend(mut cmd_rx: UnboundedReceiver<UiCmd>, event_tx: Sender<
         match cmd {
             UiCmd::Connect { site, proxy } => {
                 let (stx, srx) = unbounded_channel();
-                tokio::spawn(run_session(srx, event_tx.clone(), site.clone(), proxy.clone()));
+                tokio::spawn(with_ftp_events(
+                    event_tx.clone(),
+                    None,
+                    run_session(srx, event_tx.clone(), site.clone(), proxy.clone()),
+                ));
                 let (ttx, trx) = unbounded_channel();
-                tokio::spawn(run_transfers(trx, event_tx.clone(), site, proxy));
+                tokio::spawn(with_ftp_events(
+                    event_tx.clone(),
+                    None,
+                    run_transfers(trx, event_tx.clone(), site, proxy),
+                ));
                 session_tx = Some(stx);
                 transfer_tx = Some(ttx);
             }
@@ -743,9 +752,25 @@ async fn run_session(
                 }
             }
             SessionCmd::Delete { paths } => {
-                for p in paths {
-                    if let Err(e) = session.delete(&p).await {
-                        notify(&event_tx, e);
+                for path in paths {
+                    match session.delete(&path).await {
+                        Ok(()) if matches!(&session, RemoteSession::Sftp(_)) => {
+                            let _ = event_tx.send(UiEvent::Notify {
+                                level: crate::bus::Level::Info,
+                                text: crate::localized!(
+                                    "已删除远程条目：{path}",
+                                    "Deleted remote entry: {path}"
+                                ),
+                            });
+                        }
+                        Ok(()) => {}
+                        Err(e) => notify(
+                            &event_tx,
+                            crate::localized!(
+                                "无法删除远程条目「{path}」：{e}",
+                                "Could not delete remote entry \"{path}\": {e}"
+                            ),
+                        ),
                     }
                 }
             }
